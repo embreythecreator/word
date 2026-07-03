@@ -13,7 +13,7 @@ GHCR_IMAGE := ghcr.io/lfnovo/open-notebook
 PLATFORMS := linux/amd64,linux/arm64
 
 database:
-	docker compose up -d surrealdb
+	docker compose up -d postgres
 
 run:
 	@echo "⚠️  Warning: Starting frontend only. For full functionality, use 'make start-all'"
@@ -141,11 +141,11 @@ api:
 worker: worker-start
 
 worker-start:
-	@echo "Starting surreal-commands worker..."
+	@echo "Starting background command worker..."
 	uv run --env-file .env surreal-commands-worker --import-modules commands
 
 worker-stop:
-	@echo "Stopping surreal-commands worker..."
+	@echo "Stopping background command worker..."
 	pkill -f "surreal-commands-worker" || true
 
 worker-restart: worker-stop
@@ -154,9 +154,9 @@ worker-restart: worker-stop
 
 # === Service Management ===
 start-all:
-	@echo "🚀 Starting Open Notebook (Database + API + Worker + Frontend)..."
-	@echo "📊 Starting SurrealDB..."
-	@docker compose -f docker-compose.dev.yml up -d surrealdb
+	@echo "🚀 Starting Open Notebook (Database + API + Worker)..."
+	@echo "📊 Starting Postgres/pgvector..."
+	@docker compose up -d postgres
 	@sleep 3
 	@echo "🔧 Starting API backend..."
 	@uv run run_api.py &
@@ -164,12 +164,9 @@ start-all:
 	@echo "⚙️ Starting background worker..."
 	@uv run --env-file .env surreal-commands-worker --import-modules commands &
 	@sleep 2
-	@echo "🌐 Starting Next.js frontend..."
 	@echo "✅ All services started!"
-	@echo "📱 Frontend: http://localhost:3000"
 	@echo "🔗 API: http://localhost:5055"
 	@echo "📚 API Docs: http://localhost:5055/docs"
-	cd frontend && npm run dev
 
 stop-all:
 	@echo "🛑 Stopping all Open Notebook services..."
@@ -182,14 +179,12 @@ stop-all:
 
 status:
 	@echo "📊 Open Notebook Service Status:"
-	@echo "Database (SurrealDB):"
-	@docker compose ps surrealdb 2>/dev/null || echo "  ❌ Not running"
+	@echo "Database (Postgres/pgvector):"
+	@docker compose ps postgres 2>/dev/null || echo "  ❌ Not running"
 	@echo "API Backend:"
 	@pgrep -f "run_api.py\|uvicorn api.main:app" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
 	@echo "Background Worker:"
 	@pgrep -f "surreal-commands-worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-	@echo "Next.js Frontend:"
-	@pgrep -f "next dev" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
 
 # === Documentation Export ===
 export-docs:

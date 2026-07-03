@@ -81,7 +81,7 @@ async def generate_podcast_command(
         )
         logger.info(f"Using episode profile: {input_data.episode_profile}")
 
-        # 1. Load Episode and Speaker profiles from SurrealDB
+        # 1. Load Episode and Speaker profiles from the database
         episode_profile = await EpisodeProfile.get_by_name(input_data.episode_profile)
         if not episode_profile:
             raise ValueError(
@@ -137,7 +137,7 @@ async def generate_podcast_command(
         episode_profiles = await repo_query("SELECT * FROM episode_profile")
         speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
 
-        # Transform the surrealdb array into a dictionary for podcast-creator
+        # Transform profile rows into dictionaries for podcast-creator
         episode_profiles_dict = {
             profile["name"]: profile for profile in episode_profiles
         }

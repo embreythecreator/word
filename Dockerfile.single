@@ -1,31 +1,4 @@
-# Stage 1: Frontend Builder
-FROM node:22-slim AS frontend-builder
-WORKDIR /app/frontend
-
-# Copy dependency files first to leverage cache
-COPY frontend/package.json frontend/package-lock.json ./
-ARG NPM_REGISTRY=https://registry.npmjs.org/
-RUN npm config set registry ${NPM_REGISTRY} \
- && npm config set fetch-retries 5 \
- && npm config set fetch-retry-mintimeout 20000 \
- && npm config set fetch-retry-maxtimeout 120000
-# Retry npm ci to survive transient registry ECONNRESETs, which are common on
-# the QEMU-emulated arm64 leg of the multi-arch build.
-RUN i=0; until npm ci; do \
-      i=$((i+1)); \
-      if [ "$i" -ge 5 ]; then echo "npm ci failed after $i attempts"; exit 1; fi; \
-      echo "npm ci failed (attempt $i); retrying in 15s"; sleep 15; \
-    done
-
-# Copy the rest of the frontend source
-COPY frontend/ ./
-# Build the frontend
-RUN npm run build
-
-# Stage 2: SurrealDB binary (pinned to v2 to match docker-compose.yml)
-FROM surrealdb/surrealdb:v2 AS surreal-binary
-
-# Stage 4: Backend Builder
+# Stage 1: Backend Builder
 FROM python:3.12-slim-trixie AS backend-builder
 # Install build dependencies
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
@@ -50,7 +23,7 @@ ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 RUN mkdir -p /app/tiktoken-cache && \
     .venv/bin/python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
 
-# Stage 5: Runtime
+# Stage 2: Runtime
 FROM python:3.12-slim-trixie AS runtime
 
 # Install runtime dependencies
@@ -58,12 +31,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ffmpeg \
     supervisor \
     curl \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
-
-# Install SurrealDB (copied from pinned v2 image to match docker-compose.yml)
-COPY --from=surreal-binary /surreal /usr/local/bin/surreal
 
 # Install uv (optional but helpful for some scripts)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -77,13 +45,6 @@ COPY . /app/
 # Copy pre-downloaded tiktoken encoding from builder (outside /data/ — volume-mount safe)
 COPY --from=backend-builder /app/tiktoken-cache /app/tiktoken-cache
 
-# Copy built frontend from standalone output
-COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend/
-COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
-COPY --from=frontend-builder /app/frontend/public /app/frontend/public
-
-# Bind Next.js to all interfaces (required for Docker networking and reverse proxies)
-ENV HOSTNAME=0.0.0.0
 # Point the app at the pre-baked tiktoken encoding (see open_notebook/config.py)
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 
@@ -99,8 +60,8 @@ COPY supervisord.single.conf /etc/supervisor/conf.d/supervisord.conf
 # Create log directories
 RUN mkdir -p /var/log/supervisor
 
-# Expose ports
-EXPOSE 8502 5055
+# Expose REST API port
+EXPOSE 5055
 
 # Set startup command
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

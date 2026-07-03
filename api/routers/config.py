@@ -108,7 +108,7 @@ async def check_database_health() -> dict:
     """
     try:
         # 2-second timeout for database health check
-        result = await asyncio.wait_for(repo_query("RETURN 1"), timeout=2.0)
+        result = await asyncio.wait_for(repo_query("SELECT 1 AS value"), timeout=2.0)
         if result:
             return {"status": "online"}
         return {"status": "offline", "error": "Empty result"}

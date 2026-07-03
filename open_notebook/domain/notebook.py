@@ -6,9 +6,8 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from surreal_commands import submit_command
-from surrealdb import RecordID
 
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import RecordID, ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
 
@@ -28,17 +27,22 @@ class Notebook(ObjectModel):
 
     async def get_sources(self, include_full_text: bool = False) -> List["Source"]:
         try:
-            source_projection = "" if include_full_text else " omit source.full_text"
+            source_projection = (
+                "s.*"
+                if include_full_text
+                else "s.id, s.asset, s.title, s.topics, s.command, s.created, s.updated"
+            )
             srcs = await repo_query(
                 f"""
-                select *{source_projection} from (
-                select in as source from reference where out=$id
-                fetch source
-            ) order by source.updated desc
-            """,
+                SELECT {source_projection}
+                FROM source s
+                JOIN reference r ON r.in_id = s.id
+                WHERE r.out_id = $id
+                ORDER BY s.updated DESC
+                """,
                 {"id": ensure_record_id(self.id)},
             )
-            return [Source(**src["source"]) for src in srcs] if srcs else []
+            return [Source(**src) for src in srcs] if srcs else []
         except Exception as e:
             logger.error(f"Error fetching sources for notebook {self.id}: {str(e)}")
             logger.exception(e)
@@ -47,20 +51,21 @@ class Notebook(ObjectModel):
     async def get_notes(self, include_content: bool = False) -> List["Note"]:
         try:
             note_projection = (
-                " omit note.embedding"
+                "n.id, n.title, n.summary, n.note_type, n.content, n.created, n.updated"
                 if include_content
-                else " omit note.content, note.embedding"
+                else "n.id, n.title, n.summary, n.note_type, n.created, n.updated"
             )
             srcs = await repo_query(
                 f"""
-            select *{note_projection} from (
-                select in as note from artifact where out=$id
-                fetch note
-            ) order by note.updated desc
-            """,
+                SELECT {note_projection}
+                FROM note n
+                JOIN artifact a ON a.in_id = n.id
+                WHERE a.out_id = $id
+                ORDER BY n.updated DESC
+                """,
                 {"id": ensure_record_id(self.id)},
             )
-            return [Note(**src["note"]) for src in srcs] if srcs else []
+            return [Note(**src) for src in srcs] if srcs else []
         except Exception as e:
             logger.error(f"Error fetching notes for notebook {self.id}: {str(e)}")
             logger.exception(e)
@@ -130,20 +135,15 @@ class Notebook(ObjectModel):
         try:
             srcs = await repo_query(
                 """
-                select * from (
-                    select
-                    <- chat_session as chat_session
-                    from refers_to
-                    where out=$id
-                    fetch chat_session
-                )
-                order by chat_session.updated desc
-            """,
+                SELECT c.*
+                FROM chat_session c
+                JOIN refers_to r ON r.in_id = c.id
+                WHERE r.out_id = $id
+                ORDER BY c.updated DESC
+                """,
                 {"id": ensure_record_id(self.id)},
             )
-            return (
-                [ChatSession(**src["chat_session"][0]) for src in srcs] if srcs else []
-            )
+            return [ChatSession(**src) for src in srcs] if srcs else []
         except Exception as e:
             logger.error(
                 f"Error fetching chat sessions for notebook {self.id}: {str(e)}"
@@ -165,7 +165,7 @@ class Notebook(ObjectModel):
 
             # Count notes
             note_result = await repo_query(
-                "SELECT count() as count FROM artifact WHERE out = $notebook_id GROUP ALL",
+                "SELECT count(*) as count FROM artifact WHERE out_id = $notebook_id",
                 {"notebook_id": notebook_id},
             )
             note_count = note_result[0]["count"] if note_result else 0
@@ -175,10 +175,13 @@ class Notebook(ObjectModel):
             # If assigned_others > 0, source is shared with other notebooks
             source_counts = await repo_query(
                 """
-                SELECT
-                    id,
-                    count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
+                SELECT s.id, count(r_other.out_id) as assigned_others
+                FROM source s
+                JOIN reference r_self
+                    ON r_self.in_id = s.id AND r_self.out_id = $notebook_id
+                LEFT JOIN reference r_other
+                    ON r_other.in_id = s.id AND r_other.out_id != $notebook_id
+                GROUP BY s.id
                 """,
                 {"notebook_id": notebook_id},
             )
@@ -230,7 +233,7 @@ class Notebook(ObjectModel):
 
             # Delete artifact relationships
             await repo_query(
-                "DELETE artifact WHERE out = $notebook_id",
+                "DELETE FROM artifact WHERE out_id = $notebook_id",
                 {"notebook_id": notebook_id},
             )
 
@@ -240,10 +243,13 @@ class Notebook(ObjectModel):
                 # If assigned_others = 0, source is exclusive to this notebook
                 source_counts = await repo_query(
                     """
-                    SELECT
-                        id,
-                        count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                    FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
+                    SELECT s.id, count(r_other.out_id) as assigned_others
+                    FROM source s
+                    JOIN reference r_self
+                        ON r_self.in_id = s.id AND r_self.out_id = $notebook_id
+                    LEFT JOIN reference r_other
+                        ON r_other.in_id = s.id AND r_other.out_id != $notebook_id
+                    GROUP BY s.id
                     """,
                     {"notebook_id": notebook_id},
                 )
@@ -265,14 +271,14 @@ class Notebook(ObjectModel):
             else:
                 # Just count sources that will be unlinked
                 source_result = await repo_query(
-                    "SELECT count() as count FROM reference WHERE out = $notebook_id GROUP ALL",
+                    "SELECT count(*) as count FROM reference WHERE out_id = $notebook_id",
                     {"notebook_id": notebook_id},
                 )
                 unlinked_sources = source_result[0]["count"] if source_result else 0
 
             # Delete reference relationships (unlink all sources)
             await repo_query(
-                "DELETE reference WHERE out = $notebook_id",
+                "DELETE FROM reference WHERE out_id = $notebook_id",
                 {"notebook_id": notebook_id},
             )
             logger.info(
@@ -309,11 +315,14 @@ class SourceEmbedding(ObjectModel):
         try:
             src = await repo_query(
                 """
-            select source.* from $id fetch source
-            """,
+                SELECT s.*
+                FROM source_embedding se
+                JOIN source s ON s.id = se.source
+                WHERE se.id = $id
+                """,
                 {"id": ensure_record_id(self.id)},
             )
-            return Source(**src[0]["source"])
+            return Source(**src[0])
         except Exception as e:
             logger.error(f"Error fetching source for embedding {self.id}: {str(e)}")
             logger.exception(e)
@@ -329,11 +338,14 @@ class SourceInsight(ObjectModel):
         try:
             src = await repo_query(
                 """
-            select source.* from $id fetch source
-            """,
+                SELECT s.*
+                FROM source_insight si
+                JOIN source s ON s.id = si.source
+                WHERE si.id = $id
+                """,
                 {"id": ensure_record_id(self.id)},
             )
-            return Source(**src[0]["source"])
+            return Source(**src[0])
         except Exception as e:
             logger.error(f"Error fetching source for insight {self.id}: {str(e)}")
             logger.exception(e)
@@ -443,7 +455,7 @@ class Source(ObjectModel):
         try:
             result = await repo_query(
                 """
-                select count() as chunks from source_embedding where source=$id GROUP ALL
+                SELECT count(*) as chunks FROM source_embedding WHERE source=$id
                 """,
                 {"id": ensure_record_id(self.id)},
             )
@@ -602,11 +614,11 @@ class Source(ObjectModel):
         try:
             source_id = ensure_record_id(self.id)
             await repo_query(
-                "DELETE source_embedding WHERE source = $source_id",
+                "DELETE FROM source_embedding WHERE source = $source_id",
                 {"source_id": source_id},
             )
             await repo_query(
-                "DELETE source_insight WHERE source = $source_id",
+                "DELETE FROM source_insight WHERE source = $source_id",
                 {"source_id": source_id},
             )
             logger.debug(f"Deleted embeddings and insights for source {self.id}")
@@ -701,16 +713,85 @@ async def text_search(
     try:
         search_results = await repo_query(
             """
-            select *
-            from fn::text_search($keyword, $results, $source, $note)
+            WITH hits AS (
+                SELECT
+                    id AS item_id,
+                    ts_rank_cd(
+                        to_tsvector('english', coalesce(title, '')),
+                        plainto_tsquery('english', $keyword)
+                    ) AS relevance
+                FROM source
+                WHERE $source
+                    AND to_tsvector('english', coalesce(title, ''))
+                        @@ plainto_tsquery('english', $keyword)
+                UNION ALL
+                SELECT
+                    id AS item_id,
+                    ts_rank_cd(
+                        to_tsvector('english', coalesce(full_text, '')),
+                        plainto_tsquery('english', $keyword)
+                    ) AS relevance
+                FROM source
+                WHERE $source
+                    AND to_tsvector('english', coalesce(full_text, ''))
+                        @@ plainto_tsquery('english', $keyword)
+                UNION ALL
+                SELECT
+                    source AS item_id,
+                    ts_rank_cd(
+                        to_tsvector('english', coalesce(content, '')),
+                        plainto_tsquery('english', $keyword)
+                    ) AS relevance
+                FROM source_embedding
+                WHERE $source
+                    AND to_tsvector('english', coalesce(content, ''))
+                        @@ plainto_tsquery('english', $keyword)
+                UNION ALL
+                SELECT
+                    source AS item_id,
+                    ts_rank_cd(
+                        to_tsvector('english', coalesce(content, '')),
+                        plainto_tsquery('english', $keyword)
+                    ) AS relevance
+                FROM source_insight
+                WHERE $source
+                    AND to_tsvector('english', coalesce(content, ''))
+                        @@ plainto_tsquery('english', $keyword)
+                UNION ALL
+                SELECT
+                    id AS item_id,
+                    ts_rank_cd(
+                        to_tsvector('english', coalesce(title, '')),
+                        plainto_tsquery('english', $keyword)
+                    ) AS relevance
+                FROM note
+                WHERE $note
+                    AND to_tsvector('english', coalesce(title, ''))
+                        @@ plainto_tsquery('english', $keyword)
+                UNION ALL
+                SELECT
+                    id AS item_id,
+                    ts_rank_cd(
+                        to_tsvector('english', coalesce(content, '')),
+                        plainto_tsquery('english', $keyword)
+                    ) AS relevance
+                FROM note
+                WHERE $note
+                    AND to_tsvector('english', coalesce(content, ''))
+                        @@ plainto_tsquery('english', $keyword)
+            )
+            SELECT item_id AS id, item_id, max(relevance) AS relevance
+            FROM hits
+            GROUP BY item_id
+            ORDER BY relevance DESC
+            LIMIT $results
             """,
             {"keyword": keyword, "results": results, "source": source, "note": note},
         )
         return search_results
     except RuntimeError as e:
-        # SurrealDB's search::highlight can compute a byte position that exceeds the
-        # stored string length on large or multi-byte chunks, aborting the whole query
-        # ("position overflow"). Fall back to vector search so the user still gets
+        # Legacy stores could raise a highlight "position overflow" on large or
+        # multi-byte chunks. Keep the fallback so upgraded callers still get
         # results instead of a 500. See issue #648.
         if "position overflow" in str(e):
             logger.warning(
@@ -751,7 +832,25 @@ async def vector_search(
         embed = await generate_embedding(keyword)
         search_results = await repo_query(
             """
-            SELECT * FROM fn::vector_search($embed, $results, $source, $note, $minimum_score);
+            WITH hits AS (
+                SELECT source AS item_id, content, 1 - (embedding <=> $embed) AS similarity
+                FROM source_embedding
+                WHERE $source AND embedding IS NOT NULL
+                UNION ALL
+                SELECT source AS item_id, content, 1 - (embedding <=> $embed) AS similarity
+                FROM source_insight
+                WHERE $source AND embedding IS NOT NULL
+                UNION ALL
+                SELECT id AS item_id, content, 1 - (embedding <=> $embed) AS similarity
+                FROM note
+                WHERE $note AND embedding IS NOT NULL
+            )
+            SELECT item_id AS id, item_id, max(similarity) AS similarity
+            FROM hits
+            WHERE similarity >= $minimum_score
+            GROUP BY item_id
+            ORDER BY similarity DESC
+            LIMIT $results
             """,
             {
                 "embed": embed,

@@ -6,7 +6,13 @@ from pydantic import BaseModel
 from surreal_commands import CommandInput, CommandOutput, command, submit_command
 
 from open_notebook.ai.models import model_manager
-from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_create,
+    repo_insert,
+    repo_query,
+    repo_update,
+)
 from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
@@ -223,13 +229,7 @@ async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
         )
 
         # 3. UPSERT embedding into note record
-        await repo_query(
-            "UPDATE $note_id SET embedding = $embedding",
-            {
-                "note_id": ensure_record_id(input_data.note_id),
-                "embedding": embedding,
-            },
-        )
+        await repo_update("note", input_data.note_id, {"embedding": embedding})
 
         processing_time = time.time() - start_time
         logger.info(
@@ -320,12 +320,8 @@ async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOu
         )
 
         # 3. UPSERT embedding into insight record
-        await repo_query(
-            "UPDATE $insight_id SET embedding = $embedding",
-            {
-                "insight_id": ensure_record_id(input_data.insight_id),
-                "embedding": embedding,
-            },
+        await repo_update(
+            "source_insight", input_data.insight_id, {"embedding": embedding}
         )
 
         processing_time = time.time() - start_time
@@ -413,7 +409,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         # 2. DELETE existing embeddings (idempotency)
         logger.debug(f"Deleting existing embeddings for source {input_data.source_id}")
         await repo_query(
-            "DELETE source_embedding WHERE source = $source_id",
+            "DELETE FROM source_embedding WHERE source = $source_id",
             {"source_id": ensure_record_id(input_data.source_id)},
         )
 
@@ -621,17 +617,10 @@ async def legacy_embed_chunk_command(
             command_id=cmd_id,
         )
 
-        await repo_query(
-            """
-            CREATE source_embedding CONTENT {
-                "source": $source_id,
-                "order": $order,
-                "content": $content,
-                "embedding": $embedding,
-            };
-            """,
+        await repo_create(
+            "source_embedding",
             {
-                "source_id": ensure_record_id(input_data.source_id),
+                "source": ensure_record_id(input_data.source_id),
                 "order": input_data.chunk_index,
                 "content": input_data.chunk_text,
                 "embedding": embedding,
@@ -735,8 +724,8 @@ async def create_insight_command(
     Create a source insight with automatic retry on transaction conflicts.
 
     This command wraps the CREATE source_insight operation with retry logic
-    to handle SurrealDB transaction conflicts that occur during batch imports
-    when multiple parallel transformations try to create insights concurrently.
+    to handle transient write conflicts during batch imports when multiple
+    parallel transformations try to create insights concurrently.
 
     Flow:
     1. CREATE source_insight record in database
@@ -757,25 +746,19 @@ async def create_insight_command(
         )
 
         # 1. Create insight record in database
-        result = await repo_query(
-            """
-            CREATE source_insight CONTENT {
-                "source": $source_id,
-                "insight_type": $insight_type,
-                "content": $content
-            };
-            """,
+        result = await repo_create(
+            "source_insight",
             {
-                "source_id": ensure_record_id(input_data.source_id),
+                "source": ensure_record_id(input_data.source_id),
                 "insight_type": input_data.insight_type,
                 "content": input_data.content,
             },
         )
 
-        if not result or len(result) == 0:
+        if not result:
             raise ValueError("Failed to create insight - no result returned")
 
-        insight_id = str(result[0].get("id", ""))
+        insight_id = str(result.get("id", ""))
         if not insight_id:
             raise ValueError("Failed to create insight - no ID in result")
 
@@ -841,22 +824,16 @@ async def collect_items_for_rebuild(
             # Query sources with embeddings (via source_embedding table)
             result = await repo_query(
                 """
-                RETURN array::distinct(
-                    SELECT VALUE source.id
-                    FROM source_embedding
-                    WHERE embedding != none AND array::len(embedding) > 0
-                )
+                SELECT DISTINCT source AS id
+                FROM source_embedding
+                WHERE embedding IS NOT NULL
                 """
             )
-            # RETURN returns the array directly as the result (not nested)
-            if result:
-                items["sources"] = [str(item) for item in result]
-            else:
-                items["sources"] = []
+            items["sources"] = [str(item["id"]) for item in result] if result else []
         else:  # mode == "all"
             # Query all sources with non-empty content
             result = await repo_query(
-                "SELECT id FROM source WHERE full_text != none AND string::trim(full_text) != ''"
+                "SELECT id FROM source WHERE full_text IS NOT NULL AND btrim(full_text) != ''"
             )
             items["sources"] = [str(item["id"]) for item in result] if result else []
 
@@ -866,12 +843,12 @@ async def collect_items_for_rebuild(
         if mode == "existing":
             # Query notes with embeddings
             result = await repo_query(
-                "SELECT id FROM note WHERE embedding != none AND array::len(embedding) > 0"
+                "SELECT id FROM note WHERE embedding IS NOT NULL"
             )
         else:  # mode == "all"
             # Query all notes with non-empty content
             result = await repo_query(
-                "SELECT id FROM note WHERE content != none AND string::trim(content) != ''"
+                "SELECT id FROM note WHERE content IS NOT NULL AND btrim(content) != ''"
             )
 
         items["notes"] = [str(item["id"]) for item in result] if result else []
@@ -881,12 +858,12 @@ async def collect_items_for_rebuild(
         if mode == "existing":
             # Query insights with embeddings
             result = await repo_query(
-                "SELECT id FROM source_insight WHERE embedding != none AND array::len(embedding) > 0"
+                "SELECT id FROM source_insight WHERE embedding IS NOT NULL"
             )
         else:  # mode == "all"
             # Query all insights with non-empty content
             result = await repo_query(
-                "SELECT id FROM source_insight WHERE content != none AND string::trim(content) != ''"
+                "SELECT id FROM source_insight WHERE content IS NOT NULL AND btrim(content) != ''"
             )
 
         items["insights"] = [str(item["id"]) for item in result] if result else []

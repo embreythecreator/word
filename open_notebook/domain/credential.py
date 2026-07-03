@@ -140,7 +140,7 @@ class Credential(ObjectModel):
     async def get_by_provider(cls, provider: str) -> List["Credential"]:
         """Get all credentials for a provider."""
         results = await repo_query(
-            "SELECT * FROM credential WHERE string::lowercase(provider) = string::lowercase($provider) ORDER BY created ASC",
+            "SELECT * FROM credential WHERE lower(provider) = lower($provider) ORDER BY created ASC",
             {"provider": provider},
         )
         credentials = []

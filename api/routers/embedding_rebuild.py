@@ -42,17 +42,15 @@ async def start_rebuild(request: RebuildRequest):
                 # Count sources with embeddings
                 result = await repo_query(
                     """
-                    SELECT VALUE count(array::distinct(
-                        SELECT VALUE source.id
-                        FROM source_embedding
-                        WHERE embedding != none AND array::len(embedding) > 0
-                    )) as count FROM {}
+                    SELECT count(DISTINCT source) as count
+                    FROM source_embedding
+                    WHERE embedding IS NOT NULL
                     """
                 )
             else:
                 # Count all sources with content
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM source WHERE full_text != none GROUP ALL"
+                    "SELECT count(*) as count FROM source WHERE full_text IS NOT NULL AND btrim(full_text) != ''"
                 )
 
             if result and isinstance(result[0], dict):
@@ -63,11 +61,11 @@ async def start_rebuild(request: RebuildRequest):
         if request.include_notes:
             if request.mode == "existing":
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM note WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
+                    "SELECT count(*) as count FROM note WHERE embedding IS NOT NULL"
                 )
             else:
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM note WHERE content != none GROUP ALL"
+                    "SELECT count(*) as count FROM note WHERE content IS NOT NULL AND btrim(content) != ''"
                 )
 
             if result and isinstance(result[0], dict):
@@ -78,11 +76,11 @@ async def start_rebuild(request: RebuildRequest):
         if request.include_insights:
             if request.mode == "existing":
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM source_insight WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
+                    "SELECT count(*) as count FROM source_insight WHERE embedding IS NOT NULL"
                 )
             else:
                 result = await repo_query(
-                    "SELECT VALUE count() as count FROM source_insight GROUP ALL"
+                    "SELECT count(*) as count FROM source_insight WHERE content IS NOT NULL AND btrim(content) != ''"
                 )
 
             if result and isinstance(result[0], dict):

@@ -43,16 +43,15 @@ make start-all
 # Start database
 make database
 
-# Start all services (DB + API + Worker + Frontend)
+# Start all services (DB + API + Worker)
 make start-all
 ```
 
 ### What This Does
 
-1. Starts SurrealDB in Docker (port 8000)
+1. Starts Postgres/pgvector in Docker (port 5432)
 2. Starts FastAPI backend (port 5055)
 3. Starts background worker (surreal-commands)
-4. Starts Next.js frontend (port 3000)
 
 ### Individual Services
 
@@ -289,10 +288,9 @@ Open Notebook supports internationalization. To add a new language:
 
 Database migrations run **automatically** when the API starts.
 
-1. Create migration file: `migrations/XXX_description.surql`
-2. Write SurrealQL schema changes
-3. (Optional) Create rollback: `migrations/XXX_description_down.surql`
-4. Restart API - migration runs on startup
+1. Create migration file: `open_notebook/database/migrations/XXX_description.sql`
+2. Write SQL schema changes
+3. Restart API - migration runs on startup
 
 ---
 
@@ -305,10 +303,10 @@ Database migrations run **automatically** when the API starts.
 make status
 
 # Check database
-docker compose ps surrealdb
+docker compose ps postgres
 
 # View logs
-docker compose logs surrealdb
+docker compose logs postgres
 
 # Restart everything
 make stop-all
@@ -330,8 +328,8 @@ make stop-all
 ### Database Connection Issues
 
 ```bash
-# Verify SurrealDB is running
-docker compose ps surrealdb
+# Verify Postgres is running
+docker compose ps postgres
 
 # Check connection settings in .env
 cat .env | grep SURREAL
@@ -357,13 +355,13 @@ make docker-build-local
 ```
 open-notebook/
 ├── api/                    # FastAPI backend
-├── frontend/               # Next.js React frontend
+├── frontend/               # Legacy/reference frontend source
 ├── open_notebook/          # Python core library
 │   ├── domain/            # Domain models
 │   ├── graphs/            # LangGraph workflows
 │   ├── ai/                # AI provider integration
-│   └── database/          # SurrealDB operations
-├── migrations/             # Database migrations
+│   └── database/          # Postgres/pgvector operations
+├── open_notebook/database/migrations/ # Database migrations
 ├── tests/                  # Test suite
 ├── docs/                   # User documentation
 └── Makefile               # Development commands
@@ -382,11 +380,10 @@ See component-specific CLAUDE.md files for detailed architecture:
 
 ```bash
 # .env file
-SURREAL_URL=ws://localhost:8000
-SURREAL_USER=root
-SURREAL_PASS=root
-SURREAL_DB=open_notebook
-SURREAL_NS=production
+DATABASE_URL=postgresql://open_notebook:open_notebook@localhost:5432/open_notebook
+OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
+OPEN_NOTEBOOK_WARD_TOKEN=
+OPEN_NOTEBOOK_EMBEDDING_DIMENSION=1536
 
 # AI Provider (at least one required)
 OPENAI_API_KEY=sk-...
@@ -404,7 +401,7 @@ See [docs/5-CONFIGURATION/](docs/5-CONFIGURATION/) for complete configuration gu
 ### Speed Up Local Development
 
 1. **Use `make start-all`** instead of Docker for daily work
-2. **Keep SurrealDB running** between sessions (`make database`)
+2. **Keep Postgres running** between sessions (`make database`)
 3. **Use `make docker-build-local`** only when testing Dockerfile changes
 4. **Skip multi-platform builds** until ready to publish
 

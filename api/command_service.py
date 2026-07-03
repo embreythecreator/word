@@ -75,7 +75,7 @@ class CommandService:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List command jobs with optional filtering"""
-        # This will be implemented with proper SurrealDB queries
+            # This will be implemented with proper command-store queries.
         # For now, return empty list as this is foundation phase
         return []
 

@@ -1,3 +1,4 @@
+import hmac
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
@@ -9,16 +10,38 @@ from starlette.responses import JSONResponse
 from open_notebook.utils.encryption import get_secret_from_env
 
 
+def get_api_bearer_tokens() -> list[str]:
+    """Configured bearer tokens accepted by the REST API."""
+    tokens = [
+        get_secret_from_env("OPEN_NOTEBOOK_WARD_TOKEN"),
+        get_secret_from_env("WARD_TOKEN"),
+        get_secret_from_env("API_SERVER_KEY"),
+        get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"),
+    ]
+    return [token for token in tokens if token]
+
+
+def is_auth_enabled() -> bool:
+    return bool(get_api_bearer_tokens())
+
+
+def _is_valid_bearer_token(credentials: str) -> bool:
+    return any(
+        hmac.compare_digest(credentials, token)
+        for token in get_api_bearer_tokens()
+    )
+
+
 class PasswordAuthMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to check password authentication for all API requests.
-    Always active with default password if OPEN_NOTEBOOK_PASSWORD is not set.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
+    Middleware to check bearer authentication for all API requests.
+
+    Accepts Ward/API server tokens first, then the legacy OPEN_NOTEBOOK_PASSWORD
+    token for local deployments. Supports Docker secrets via *_FILE variants.
     """
 
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
-        self.password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
         self.excluded_paths = excluded_paths or [
             "/",
             "/health",
@@ -28,8 +51,8 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
         ]
 
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication if no password is set
-        if not self.password:
+        # Skip authentication if no token is configured.
+        if not is_auth_enabled():
             return await call_next(request)
 
         # Skip authentication for excluded paths
@@ -50,7 +73,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Expected format: "Bearer {password}"
+        # Expected format: "Bearer {token}"
         try:
             scheme, credentials = auth_header.split(" ", 1)
             if scheme.lower() != "bearer":
@@ -62,15 +85,15 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Check password
-        if credentials != self.password:
+        # Check configured Ward/password bearer tokens.
+        if not _is_valid_bearer_token(credentials):
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Invalid password"},
+                content={"detail": "Invalid bearer token"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Password is correct, proceed with the request
+        # Bearer token is correct, proceed with the request.
         response = await call_next(request)
         return response
 
@@ -83,16 +106,14 @@ def check_api_password(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> bool:
     """
-    Utility function to check API password.
+    Utility function to check API bearer auth.
     Can be used as a dependency in individual routes if needed.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
-    Returns True without checking credentials if OPEN_NOTEBOOK_PASSWORD is not configured.
-    Raises 401 if credentials are missing or don't match the configured password.
+    Supports Docker secrets via *_FILE variants.
+    Returns True without checking credentials if no auth token is configured.
+    Raises 401 if credentials are missing or don't match a configured token.
     """
-    password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
-
-    # No password configured - skip authentication
-    if not password:
+    # No token configured - skip authentication.
+    if not is_auth_enabled():
         return True
 
     # No credentials provided
@@ -103,11 +124,11 @@ def check_api_password(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check password
-    if credentials.credentials != password:
+    # Check bearer token.
+    if not _is_valid_bearer_token(credentials.credentials):
         raise HTTPException(
             status_code=401,
-            detail="Invalid password",
+            detail="Invalid bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

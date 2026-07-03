@@ -218,11 +218,11 @@ async def get_session(session_id: str):
         )
 
         notebook_query = await repo_query(
-            "SELECT out FROM refers_to WHERE in = $session_id",
+            "SELECT out_id FROM refers_to WHERE in_id = $session_id",
             {"session_id": ensure_record_id(full_session_id)},
         )
 
-        notebook_id = notebook_query[0]["out"] if notebook_query else None
+        notebook_id = notebook_query[0]["out_id"] if notebook_query else None
 
         if not notebook_id:
             # This might be an old session created before API migration
@@ -279,10 +279,10 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
             else f"chat_session:{session_id}"
         )
         notebook_query = await repo_query(
-            "SELECT out FROM refers_to WHERE in = $session_id",
+            "SELECT out_id FROM refers_to WHERE in_id = $session_id",
             {"session_id": ensure_record_id(full_session_id)},
         )
-        notebook_id = notebook_query[0]["out"] if notebook_query else None
+        notebook_id = notebook_query[0]["out_id"] if notebook_query else None
 
         # Get message count from LangGraph state
         msg_count = await get_session_message_count(chat_graph, full_session_id)
@@ -344,12 +344,12 @@ async def execute_chat(request: ExecuteChatRequest):
 
         # Fetch notebook linked to this session
         notebook_query = await repo_query(
-            "SELECT out FROM refers_to WHERE in = $session_id",
+            "SELECT out_id FROM refers_to WHERE in_id = $session_id",
             {"session_id": ensure_record_id(full_session_id)},
         )
         notebook = None
         if notebook_query:
-            notebook = await Notebook.get(notebook_query[0]["out"])
+            notebook = await Notebook.get(notebook_query[0]["out_id"])
 
         # Determine model override (per-request override takes precedence over session-level)
         model_override = (

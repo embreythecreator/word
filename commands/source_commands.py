@@ -50,7 +50,7 @@ class SourceProcessingOutput(CommandOutput):
     "process_source",
     app="open_notebook",
     retry={
-        "max_attempts": 15,  # Handle deep queues (workaround for SurrealDB v2 transaction conflicts)
+        "max_attempts": 15,  # Handle deep queues and transient write conflicts.
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 120,  # Allow queue to drain
