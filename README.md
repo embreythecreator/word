@@ -1,5 +1,12 @@
 <a id="readme-top"></a>
 
+> [!IMPORTANT]
+> **This fork is Word — a headless memory organ.** The web UI and chat
+> surface are removed; everything happens over a Ward-authenticated REST
+> API on Postgres+pgvector. **Start at [WORD.md](WORD.md)** — what it is,
+> quick start, API how-to, and the agent/integrator contract. The upstream
+> Open Notebook README below is kept for lineage and general background.
+
 <!-- [![Contributors][contributors-shield]][contributors-url] -->
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]

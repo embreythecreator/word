@@ -1,12 +1,14 @@
-# Open Notebook - Root CLAUDE.md
+# Word - Root CLAUDE.md
 
-This file provides architectural guidance for contributors working on Open Notebook at the project level.
+This file provides architectural guidance for contributors working on this repo at the project level.
 
 ## Project Overview
 
-**Open Notebook** is an open-source, privacy-focused alternative to Google's Notebook LM. It's an AI-powered research assistant enabling users to upload multi-modal content (PDFs, audio, video, web pages), generate intelligent notes, search semantically, chat with AI models, and produce professional podcasts—all with complete control over data and choice of AI providers.
+**Word** is a headless knowledge store — the angel architecture's memory organ. It is a fork of Open Notebook (an open-source Notebook LM alternative), decapitated per work order WO-B1: ingestion, chunking/embedding, notebooks/notes, citation-grounded search, and the podcast engine remain; the web UI and chat product surface are off the product surface; storage is Postgres+pgvector and background jobs run on procrastinate. Everything happens over a Ward-authenticated REST API on :5055.
 
-**Key Values**: Privacy-first, multi-provider AI support, fully self-hosted option, open-source transparency.
+**Read [WORD.md](WORD.md) first** — identity, quick start, API how-to, and the agent/integrator contract (stable vs unstable surface, invariants).
+
+**Key Values**: Privacy-first, boring durable infrastructure, API-only surface, open-source transparency.
 
 ---
 
@@ -14,32 +16,28 @@ This file provides architectural guidance for contributors working on Open Noteb
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│              Frontend (React/Next.js)                    │
-│              frontend/ @ port 3000                       │
-├─────────────────────────────────────────────────────────┤
-│ - Notebooks, sources, notes, chat, podcasts, search UI  │
-│ - Zustand state management, TanStack Query (React Query)│
-│ - Shadcn/ui component library with Tailwind CSS         │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP REST
-┌────────────────────────▼────────────────────────────────┐
 │              API (FastAPI)                              │
-│              api/ @ port 5055                           │
+│              api/ @ port 5055 — the only product door   │
 ├─────────────────────────────────────────────────────────┤
-│ - REST endpoints for notebooks, sources, notes, chat    │
+│ - REST endpoints for notebooks, sources, notes, search  │
+│ - Ward bearer-token auth middleware                     │
 │ - LangGraph workflow orchestration                      │
-│ - Job queue for async operations (podcasts)             │
+│ - procrastinate job queue (async embedding/podcasts)    │
 │ - Multi-provider AI provisioning via Esperanto          │
 └────────────────────────┬────────────────────────────────┘
-                         │ SurrealQL
+                         │ SQL (psycopg)
 ┌────────────────────────▼────────────────────────────────┐
-│         Database (SurrealDB)                            │
-│         Graph database @ port 8000                      │
+│         Database (Postgres + pgvector)                  │
+│         @ port 5432                                     │
 ├─────────────────────────────────────────────────────────┤
 │ - Records: Notebook, Source, Note, ChatSession, Credential│
 │ - Relationships: source-to-notebook, note-to-source     │
-│ - Vector embeddings for semantic search                 │
+│ - pgvector embeddings for semantic search               │
+│ - procrastinate_jobs table (the job queue IS the DB)    │
 └─────────────────────────────────────────────────────────┘
+
+(frontend/ still exists in-repo but is OFF the product surface —
+upstream residue pending removal; do not build features on it.)
 ```
 
 ---
@@ -63,16 +61,16 @@ User documentation is at @docs/
 - **Framework**: FastAPI 0.104+
 - **Language**: Python 3.11+
 - **Workflows**: LangGraph state machines
-- **Database**: SurrealDB async driver
+- **Database**: Postgres + pgvector (psycopg3, async)
 - **AI Providers**: Esperanto library (8+ providers: OpenAI, Anthropic, Google, Groq, Ollama, Mistral, DeepSeek, xAI)
-- **Job Queue**: Surreal-Commands for async jobs (podcasts)
+- **Job Queue**: procrastinate (Postgres-native) for async jobs — submission is a DB insert; no live worker required by any request path
 - **Logging**: Loguru
 - **Validation**: Pydantic v2
 - **Testing**: Pytest
 
 ### Database
-- **SurrealDB**: Graph database with built-in embedding storage and vector search
-- **Schema Migrations**: Automatic on API startup via AsyncMigrationManager
+- **Postgres + pgvector**: relational store with vector similarity search
+- **Schema Migrations**: plain SQL in `open_notebook/database/migrations/*.sql`, applied automatically on API startup via AsyncMigrationManager
 
 ### Additional Services
 - **Content Processing**: content-core library (file/URL extraction)
@@ -86,7 +84,7 @@ User documentation is at @docs/
 
 ### 1. Async-First Design
 - All database queries, graph invocations, and API calls are async (await)
-- SurrealDB async driver with connection pooling
+- psycopg3 async connection pool to Postgres
 - FastAPI handles concurrent requests efficiently
 
 ### 2. LangGraph Workflows
@@ -105,7 +103,7 @@ User documentation is at @docs/
 
 ### 4. Database Schema
 - **Automatic migrations**: AsyncMigrationManager runs on API startup
-- **SurrealDB graph model**: Records with relationships and embeddings
+- **Relational model**: Records with relationship tables and pgvector embedding columns; SurrealDB-style `table:hex` ids preserved as strings (load-bearing across the API)
 - **Vector search**: Built-in semantic search across all content
 - **Transactions**: Repo functions handle ACID operations
 
@@ -120,7 +118,7 @@ User documentation is at @docs/
 ### API Startup
 - **Migrations run automatically** on startup; check logs for errors
 - **Must start API before UI**: UI depends on API for all data
-- **SurrealDB must be running**: API fails without database connection
+- **Postgres must be running**: API fails without database connection (`docker compose up -d postgres`)
 
 ### Frontend-Backend Communication
 - **Base API URL**: Configured in `.env.local` (default: http://localhost:5055)
@@ -134,7 +132,7 @@ User documentation is at @docs/
 
 ### Podcast Generation
 - **Async job queue**: `podcast_service.py` submits jobs but doesn't wait
-- **Track status**: Use `/commands/{command_id}` endpoint to poll status
+- **Track status**: Use `/api/commands/jobs/{job_id}` to poll status
 - **TTS failures**: Fall back to silent audio if speech synthesis fails
 
 ### Content Processing
@@ -154,13 +152,14 @@ See dedicated CLAUDE.md files for detailed guidance:
 - **[open_notebook/domain/CLAUDE.md](open_notebook/domain/CLAUDE.md)**: Data models, repository pattern, search functions
 - **[open_notebook/ai/CLAUDE.md](open_notebook/ai/CLAUDE.md)**: ModelManager, AI provider integration, Esperanto usage
 - **[open_notebook/graphs/CLAUDE.md](open_notebook/graphs/CLAUDE.md)**: LangGraph workflow design, state machines
-- **[open_notebook/database/CLAUDE.md](open_notebook/database/CLAUDE.md)**: SurrealDB operations, migrations, async patterns
+- **[open_notebook/database/CLAUDE.md](open_notebook/database/CLAUDE.md)**: Postgres/pgvector operations, migrations, async patterns
 
 ---
 
 ## Documentation Map
 
-- **[README.md](README.md)**: Project overview, features, quick start
+- **[WORD.md](WORD.md)**: THE entry point — organ identity, quick start, API how-to, agent contract
+- **[README.md](README.md)**: Upstream project overview (kept for lineage)
 - **[docs/index.md](docs/index.md)**: Complete user & deployment documentation
 - **[CONFIGURATION.md](CONFIGURATION.md)**: Environment variables, model configuration
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines
@@ -195,10 +194,9 @@ See dedicated CLAUDE.md files for detailed guidance:
 5. Test with sample data in `tests/`
 
 ### Add Database Migration
-1. Create `migrations/XXX_description.surql`
-2. Write SurrealQL schema changes
-3. Create `migrations/XXX_description_down.surql` (optional rollback)
-4. API auto-detects on startup; migration runs if newer than recorded version
+1. Create `open_notebook/database/migrations/XXX_description.sql`
+2. Write plain SQL schema changes (idempotent where possible)
+3. API auto-detects on startup; migration runs if newer than recorded version
 
 ### Deploy to Production
 1. Review [CONFIGURATION.md](CONFIGURATION.md) for security settings
