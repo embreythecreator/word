@@ -51,7 +51,7 @@ make start-all
 
 1. Starts Postgres/pgvector in Docker (port 5432)
 2. Starts FastAPI backend (port 5055)
-3. Starts background worker (surreal-commands)
+3. Starts background worker (Procrastinate)
 
 ### Individual Services
 
@@ -332,8 +332,12 @@ make stop-all
 docker compose ps postgres
 
 # Check connection settings in .env
-cat .env | grep SURREAL
+cat .env | grep DATABASE_URL
 ```
+
+Procrastinate's job queue schema is applied by the standard API startup
+migration runner via `open_notebook/database/migrations/002_procrastinate.sql`.
+Workers use the existing `DATABASE_URL` and do not bootstrap their own schema.
 
 ### Docker Build Fails
 

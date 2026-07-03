@@ -187,6 +187,15 @@ wheels = [
 ]
 
 [[package]]
+name = "asgiref"
+version = "3.11.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/40/f03da1264ae8f7cfdbf9146542e5e7e8100a4c66ab48e791df9a03d3f6c0/asgiref-3.11.1.tar.gz", hash = "sha256:5f184dc43b7e763efe848065441eac62229c9f7b0475f41f80e207a114eda4ce", size = 38550, upload-time = "2026-02-03T13:30:14.33Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/0a/a72d10ed65068e115044937873362e6e32fab1b7dce0046aeb224682c989/asgiref-3.11.1-py3-none-any.whl", hash = "sha256:e8667a091e69529631969fd45dc268fa79b99c92c5fcdda727757e52146ec133", size = 24345, upload-time = "2026-02-03T13:30:13.039Z" },
+]
+
+[[package]]
 name = "asttokens"
 version = "3.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -463,6 +472,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/22/b3/7b2d7b8d4e0023b537dc74b4157b1c0c40656d2d79832d132296fdd1e2b6/content_core-1.14.1.tar.gz", hash = "sha256:5e2598d78dc4f1be601b4009a3a300c37d252f490b2719841b351cae28ab701b", size = 20737743, upload-time = "2026-01-30T01:48:31.472Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/d1/017d7f5a74a10471d327ace5d0e2cc11bc30400b0e2a01feaf5dad92a113/content_core-1.14.1-py3-none-any.whl", hash = "sha256:14df9b8b819376f7b9c25658368532367b453e21feb86ae77a43ae9a07161006", size = 186377, upload-time = "2026-01-30T01:48:29.872Z" },
+]
+
+[[package]]
+name = "croniter"
+version = "6.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/03/35/96ad0a71eb0b27ab4476a7ed23facd0713d82da9c911edc8af7f34a62d6a/croniter-6.2.3.tar.gz", hash = "sha256:fb129986ef7e2c44e3f4c9f503da83ad914d2afa48f40a43ee3dca4b5c41d476", size = 166174, upload-time = "2026-07-02T14:34:22.166Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/dd/6466498a8b69754cffbd7237ce4c66446ca5ffcf53fb397d437666f056d2/croniter-6.2.3-py3-none-any.whl", hash = "sha256:137a97001b4d52fb71c10b750e303db79e6e42d40fff8ff77126102176c9f786", size = 46446, upload-time = "2026-07-02T14:34:20.889Z" },
 ]
 
 [[package]]
@@ -989,15 +1010,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ba/d6/02d1c505e1d3364230e5fa16d2b58c8f36a39c5efe8e99bc4d03d06fd0ca/huggingface_hub-1.3.2.tar.gz", hash = "sha256:15d7902e154f04174a0816d1e9594adcf15cdad57596920a5dc70fadb5d896c7", size = 624018, upload-time = "2026-01-14T13:57:39.635Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/1d/acd3ef8aabb7813c6ef2f91785d855583ac5cd7c3599e5c1a1a2ed1ec2e5/huggingface_hub-1.3.2-py3-none-any.whl", hash = "sha256:b552b9562a5532102a041fa31a6966bb9de95138fc7aa578bb3703198c25d1b6", size = 534504, upload-time = "2026-01-14T13:57:37.555Z" },
-]
-
-[[package]]
-name = "humanize"
-version = "4.15.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ba/66/a3921783d54be8a6870ac4ccffcd15c4dc0dd7fcce51c6d63b8c63935276/humanize-4.15.0.tar.gz", hash = "sha256:1dd098483eb1c7ee8e32eb2e99ad1910baefa4b75c3aff3a82f4d78688993b10", size = 83599, upload-time = "2025-12-20T20:16:13.19Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/7b/bca5613a0c3b542420cf92bd5e5fb8ebd5435ce1011a091f66bb7693285e/humanize-4.15.0-py3-none-any.whl", hash = "sha256:b1186eb9f5a9749cd9cb8565aee77919dd7c8d076161cf44d70e59e3301e1769", size = 132203, upload-time = "2025-12-20T20:16:11.67Z" },
 ]
 
 [[package]]
@@ -2117,11 +2129,11 @@ dependencies = [
     { name = "numpy" },
     { name = "pgvector" },
     { name = "podcast-creator" },
+    { name = "procrastinate" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pycountry" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "surreal-commands" },
     { name = "tiktoken" },
     { name = "tomli" },
     { name = "uvicorn" },
@@ -2173,13 +2185,13 @@ requires-dist = [
     { name = "pgvector", specifier = ">=0.3.6" },
     { name = "podcast-creator", specifier = ">=0.12.0,<1" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.1" },
+    { name = "procrastinate", specifier = ">=3" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.3" },
     { name = "pycountry", specifier = ">=26.2.16" },
     { name = "pydantic", specifier = ">=2.9.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.5" },
-    { name = "surreal-commands", specifier = ">=1.3.1,<2" },
     { name = "tiktoken", specifier = ">=0.12.0" },
     { name = "tomli", specifier = ">=2.0.2" },
     { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.32.0.20241016" },
@@ -2510,6 +2522,24 @@ wheels = [
 ]
 
 [[package]]
+name = "procrastinate"
+version = "3.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "asgiref" },
+    { name = "attrs" },
+    { name = "croniter" },
+    { name = "packaging" },
+    { name = "psycopg", extra = ["pool"] },
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ab/bc/adfe64992725143791ea78c33e9a0778a97f67c0ca8761bb6fd269fbb0be/procrastinate-3.9.0.tar.gz", hash = "sha256:5805ab2af35eab12befa700ecd49e572c4f655d654151df9e5ce1ca07efb5e6e", size = 89448, upload-time = "2026-06-20T23:09:14.663Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/0c/17bfd406fe4bf85e8a0cfbb9744271df447004233da295fb6e2c10dc29e1/procrastinate-3.9.0-py3-none-any.whl", hash = "sha256:af4b9ccaeebbf2a1439e02ae1e8ce327f8436a81e9d68a0b1bd26d5e7ac697bd", size = 153597, upload-time = "2026-06-20T23:09:13.105Z" },
+]
+
+[[package]]
 name = "proglog"
 version = "0.1.12"
 source = { registry = "https://pypi.org/simple" }
@@ -2605,6 +2635,9 @@ wheels = [
 binary = [
     { name = "psycopg-binary", marker = "implementation_name != 'pypy'" },
 ]
+pool = [
+    { name = "psycopg-pool" },
+]
 
 [[package]]
 name = "psycopg-binary"
@@ -2633,6 +2666,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ca/c6/32b0835dbc2122617902b649d76a91c1e75406e76bf3d595b0c3bb5ffad6/psycopg_binary-3.3.4-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:773d573e11f437ce0bdb95b7c18dc58390494f96d43f8b45b9760436114f7652", size = 3926197, upload-time = "2026-05-01T23:28:55.55Z" },
     { url = "https://files.pythonhosted.org/packages/cd/68/d190ef0c0c5b16ded07831dabc8ddd412f4cdab07ec6e30ed38d9bda0e1f/psycopg_binary-3.3.4-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:71e55ccbdfae79a2ed9c6369c3008a3025817ff9d7e27b32a2d84e2a4267e66e", size = 4236627, upload-time = "2026-05-01T23:29:05.336Z" },
     { url = "https://files.pythonhosted.org/packages/25/8f/81dcbc2e8454b74d14881275ea45f00791052dac531a9fa8be1730d1685b/psycopg_binary-3.3.4-cp312-cp312-win_amd64.whl", hash = "sha256:494ca54901be8cf9eb7e02c25b731f2317c378efa44f43e8f9bd0e1184ae7be4", size = 3560782, upload-time = "2026-05-01T23:29:11.967Z" },
+]
+
+[[package]]
+name = "psycopg-pool"
+version = "3.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/82/7a23d26039827ecd4ebe93905651029ddd307c5182ad59296dfb6f67b528/psycopg_pool-3.3.1.tar.gz", hash = "sha256:b10b10b7a175d5cc1592147dc5b7eec8a9e0834eb3ed2c4a92c858e2f51eb63c", size = 31661, upload-time = "2026-05-01T23:31:59.809Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/ed/89c2c620af0e1660354cd8aabf9f5b21f911597ce22acb37c805d6c86bc8/psycopg_pool-3.3.1-py3-none-any.whl", hash = "sha256:2af5b432941c4c9ad5c87b3fa410aec910ec8f7c122855897983a06c45f2e4b5", size = 40023, upload-time = "2026-05-01T23:31:53.136Z" },
 ]
 
 [[package]]
@@ -3394,46 +3439,6 @@ wheels = [
 ]
 
 [[package]]
-name = "surreal-commands"
-version = "1.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "humanize" },
-    { name = "langchain-core" },
-    { name = "loguru" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "rich" },
-    { name = "surrealdb" },
-    { name = "tenacity" },
-    { name = "typer" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/be/771de2c596f63765b16f0e3d88dae6122757b2dcc7879157bbd7f0c15db9/surreal_commands-1.3.1.tar.gz", hash = "sha256:fef18d7b99cb3ac8724b0928cf8f4b034c9ff11610576311c3246ee52913579e", size = 209745, upload-time = "2026-01-31T21:56:13.852Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/77/c04722dc08e65ee98b4e74002b142ce12c34f170c1c557744c7c1acddd07/surreal_commands-1.3.1-py3-none-any.whl", hash = "sha256:45422eae761f106e4e71ffdcb4848eb2e365b10a2dc6040d032ab1ee2a0472e8", size = 38821, upload-time = "2026-01-31T21:56:12.939Z" },
-]
-
-[[package]]
-name = "surrealdb"
-version = "1.0.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "pydantic-core" },
-    { name = "requests" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
-    { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/36/ad/6f7e69bddb77a7b8deb0874652a8e9a4a15e15736d09f13911f1a9490294/surrealdb-1.0.8.tar.gz", hash = "sha256:14a9b2e24b8a2fbe15b6894617a2c2aababaf02e7fb95bd755ab9182b40c92c6", size = 291033, upload-time = "2026-01-07T18:18:40.335Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/a5/682e642b0b161b49a43aec930604bbc9367dff6ebe7e53dd7768ed25195d/surrealdb-1.0.8-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:afc95b38d915ac7cb9adafc32d6e9b5a9548470095dad67efe626dd3b7bdbfc7", size = 5130558, upload-time = "2026-01-07T18:18:32.986Z" },
-    { url = "https://files.pythonhosted.org/packages/73/94/8a0ef6934190e2aef75a3862246dca50b747c60fe87da79ef07ecea085ea/surrealdb-1.0.8-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:4052ea81bbb999bc4e48a38bbd852f89d52840bcc52573dbfa009b1260045271", size = 4991412, upload-time = "2026-01-07T18:18:34.649Z" },
-    { url = "https://files.pythonhosted.org/packages/3a/3b/82703abfc8b96a3f5000b2edca28d6f093d07185022dd60a2e463f0c59a7/surrealdb-1.0.8-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:ca0d6d4deee59f2100580da8ca2df449543d2c2945dc12299217b712278bf812", size = 5789423, upload-time = "2026-01-07T18:18:35.995Z" },
-    { url = "https://files.pythonhosted.org/packages/34/cb/dd598d0519ed537bd033f79dc7d008adee88469cc8a0e60e33a57d51989e/surrealdb-1.0.8-cp39-abi3-manylinux_2_24_x86_64.whl", hash = "sha256:b85d2ae0f43306496690081a07b06231f30383952280002275fe6083eafc2a2a", size = 5686857, upload-time = "2026-01-07T18:18:37.702Z" },
-    { url = "https://files.pythonhosted.org/packages/e1/db/5e24536cb158edcd1a40992811ed49ad4b911b330cedc84371bfa0c1d160/surrealdb-1.0.8-cp39-abi3-win_amd64.whl", hash = "sha256:977c5f4602d16476f70557c6e729c4035c6323be580a756a26f79a103e0df46d", size = 5047898, upload-time = "2026-01-07T18:18:39.085Z" },
-]
-
-[[package]]
 name = "tenacity"
 version = "9.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3557,21 +3562,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c2183016abbbfedaba506d81e30e232a68c9f0d6f6fcd1574/traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7", size = 161621, upload-time = "2024-04-19T11:11:49.746Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359, upload-time = "2024-04-19T11:11:46.763Z" },
-]
-
-[[package]]
-name = "typer"
-version = "0.21.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "rich" },
-    { name = "shellingham" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/36/bf/8825b5929afd84d0dabd606c67cd57b8388cb3ec385f7ef19c5cc2202069/typer-0.21.1.tar.gz", hash = "sha256:ea835607cd752343b6b2b7ce676893e5a0324082268b48f27aa058bdb7d2145d", size = 110371, upload-time = "2026-01-06T11:21:10.989Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a0/1d/d9257dd49ff2ca23ea5f132edf1281a0c4f9de8a762b9ae399b670a59235/typer-0.21.1-py3-none-any.whl", hash = "sha256:7985e89081c636b88d172c2ee0cfe33c253160994d47bdfdc302defd7d1f1d01", size = 47381, upload-time = "2026-01-06T11:21:09.824Z" },
 ]
 
 [[package]]

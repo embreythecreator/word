@@ -342,10 +342,11 @@ class TestSourceDomain:
         """Test that vectorize() submits embed_source command when text is valid."""
         source = Source(id="source:test_valid", title="Test", full_text="Real content")
         with patch(
-            "open_notebook.domain.notebook.submit_command", return_value="command:123"
+            "open_notebook.domain.notebook.submit_command",
+            new=AsyncMock(return_value="command:123"),
         ) as mock_submit:
             result = await source.vectorize()
-            mock_submit.assert_called_once_with(
+            mock_submit.assert_awaited_once_with(
                 "open_notebook",
                 "embed_source",
                 {"source_id": "source:test_valid"},
@@ -480,7 +481,7 @@ class TestPodcastService:
         async def fake_get_insights(self):
             return []
 
-        def fake_submit_command(app_name, command_name, command_args):
+        async def fake_submit_command(app_name, command_name, command_args):
             submitted_args.update(command_args)
             return "command:podcast"
 

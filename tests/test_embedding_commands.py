@@ -1,14 +1,18 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from surreal_commands import registry
 
 import commands
 import commands.embedding_commands as embedding_commands
+from open_notebook.jobs import registered_commands
 
 
 def test_legacy_embedding_commands_are_registered():
-    app_commands = registry.list_commands()["open_notebook"]
+    app_commands = {
+        item["name"]
+        for item in registered_commands()
+        if item["app_id"] == "open_notebook"
+    }
 
     assert "embed_chunk" in app_commands
     assert "embed_single_item" in app_commands

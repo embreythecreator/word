@@ -1,15 +1,15 @@
 # Database Module
 
-SurrealDB abstraction layer providing repository pattern for CRUD operations and async migration management.
+Postgres abstraction layer providing repository pattern for CRUD operations and async migration management.
 
 ## Purpose
 
-Encapsulates all database interactions: connection pooling, async CRUD operations, relationship management, and schema migrations. Provides clean interface for domain models and API endpoints to interact with SurrealDB without direct query knowledge.
+Encapsulates all database interactions: connection pooling, async CRUD operations, relationship management, and schema migrations. Provides clean interface for domain models and API endpoints to interact with Postgres without direct query knowledge.
 
 ## Architecture Overview
 
 Two-tier system:
-1. **Repository Layer** (repository.py): Raw async CRUD operations on SurrealDB via AsyncSurreal client
+1. **Repository Layer** (repository.py): Raw async CRUD operations on Postgres via AsyncConnection client
 2. **Migration Layer** (async_migrate.py): Schema versioning and migration execution
 
 Both leverage connection context manager for lifecycle management and automatic cleanup.
@@ -19,13 +19,13 @@ Both leverage connection context manager for lifecycle management and automatic 
 ### repository.py
 
 **Connection Management**
-- `get_database_url()`: Resolves `SURREAL_URL` or constructs from `SURREAL_ADDRESS`/`SURREAL_PORT` (backward compatible)
-- `get_database_password()`: Falls back from `SURREAL_PASSWORD` to legacy `SURREAL_PASS` env var
+- `get_database_url()`: Resolves `DATABASE_URL` or constructs from `POSTGRES_HOST`/`POSTGRES_PORT` (backward compatible)
+- `get_database_password()`: Falls back from `POSTGRES_PASSWORD` to legacy `POSTGRES_PASSWORD` env var
 - `db_connection()`: Async context manager handling sign-in, namespace/database selection, and cleanup
-  - Opens AsyncSurreal, authenticates, selects namespace/database, yields connection, closes on exit
+  - Opens AsyncConnection, authenticates, selects namespace/database, yields connection, closes on exit
 
 **Query Operations**
-- `repo_query(query_str, vars)`: Execute raw SurrealQL with parameter substitution; returns list of dicts
+- `repo_query(query_str, vars)`: Execute raw SQL with parameter substitution; returns list of dicts
 - `repo_create(table, data)`: Insert record; auto-adds `created`/`updated` timestamps; removes any existing `id` field
 - `repo_insert(table, data_list, ignore_duplicates)`: Bulk insert multiple records; optionally ignores "already contains" errors
 - `repo_upsert(table, id, data, add_timestamp)`: MERGE operation for create-or-update; optionally adds `updated` timestamp
@@ -34,14 +34,14 @@ Both leverage connection context manager for lifecycle management and automatic 
 - `repo_relate(source, relationship, target, data)`: Create graph relationship; optional relationship data
 
 **Utilities**
-- `parse_record_ids(obj)`: Recursively converts SurrealDB RecordID objects to strings (deep tree traversal)
+- `parse_record_ids(obj)`: Recursively converts Postgres RecordID objects to strings (deep tree traversal)
 - `ensure_record_id(value)`: Coerces string or RecordID to RecordID type
 
 ### async_migrate.py
 
 **Migration Classes**
 - `AsyncMigration`: Single migration wrapper
-  - `from_file(path)`: Load .surrealql file; strips comments and whitespace
+  - `from_file(path)`: Load .sql file; strips comments and whitespace
   - `run(bump)`: Execute SQL; call bump_version() on success (bump=True) or lower_version() (bump=False)
 
 - `AsyncMigrationRunner`: Sequences multiple migrations
@@ -71,7 +71,7 @@ Both leverage connection context manager for lifecycle management and automatic 
 
 ## Common Patterns
 
-- **Async-first design**: All operations async via AsyncSurreal; sync wrapper provided for legacy code
+- **Async-first design**: All operations async via AsyncConnection; sync wrapper provided for legacy code
 - **Connection per operation**: Each repo_* function opens/closes connection (no pooling); designed for serverless/stateless API
 - **Auto-timestamping**: repo_create() and repo_update() auto-set `created`/`updated` fields
 - **Error resilience**: RuntimeError for transaction conflicts (retriable, logged at DEBUG level); catches and re-raises other exceptions
@@ -80,7 +80,7 @@ Both leverage connection context manager for lifecycle management and automatic 
 
 ## Key Dependencies
 
-- `surrealdb`: AsyncSurreal client, RecordID type
+- `postgres`: AsyncConnection client, RecordID type
 - `loguru`: Logging with context (debug/error/success levels)
 - Python stdlib: `os` (env vars), `datetime` (timestamps), `contextlib` (async context manager)
 
@@ -97,7 +97,7 @@ Both leverage connection context manager for lifecycle management and automatic 
 ## How to Extend
 
 1. **Add new CRUD operation**: Follow repo_* pattern (open connection, execute query, handle errors, close)
-2. **Add migration**: Create migration file in `/migrations/N.surrealql` and `/migrations/N_down.surrealql`; update AsyncMigrationManager to load new files
+2. **Add migration**: Create migration file in `/migrations/N.sql` and `/migrations/N_down.sql`; update AsyncMigrationManager to load new files
 3. **Change timestamp behavior**: Modify repo_create()/repo_update() to not auto-set `updated` field if caller-provided
 4. **Implement connection pooling**: Replace db_connection context manager with pool.acquire() pattern (for high-throughput scenarios)
 

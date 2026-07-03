@@ -1,4 +1,4 @@
-"""Surreal-commands integration for Open Notebook"""
+"""Procrastinate task integration for Open Notebook."""
 
 from .embedding_commands import (
     embed_insight_command,

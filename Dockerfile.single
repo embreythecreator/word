@@ -47,6 +47,7 @@ COPY --from=backend-builder /app/tiktoken-cache /app/tiktoken-cache
 
 # Point the app at the pre-baked tiktoken encoding (see open_notebook/config.py)
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
+ENV PYTHONPATH=/app
 
 # Setup directories and permissions
 RUN mkdir -p /app/data /mydata

@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - "Refresh content" action on web-link sources — re-fetches the URL and re-embeds the source so its content stays current, available from the source card menu once processing has completed (translated across all 14 locales) (#259)
 
 ### Changed
-- `docker-compose.yml` now sources the SurrealDB credentials from `SURREAL_USER` / `SURREAL_PASSWORD` (applied to both the database server and the app), defaulting to `root:root` so the zero-config quick start is unchanged. Set them in a `.env` file to use your own credentials before exposing the instance; `.env.example` and the compose file note this (#946)
+- Background jobs now use Procrastinate on the existing Postgres database. Note/source embedding, source processing, insight generation, embedding rebuild fanout, and podcast generation enqueue as Postgres rows, so API requests do not require a live worker.
+- `docker-compose.yml` now sources the Postgres credentials from `POSTGRES_USER` / `POSTGRES_PASSWORD` (applied to both the database server and the app), defaulting to `open_notebook:open_notebook` so the zero-config quick start is unchanged. Set them in a `.env` file to use your own credentials before exposing the instance; `.env.example` and the compose file note this (#946)
 
 ### Fixed
 - Windows native install guide no longer points users at a `start-open-notebook.bat` that doesn't exist in the repo; the Quick Start now documents starting the four services manually with `uv run`, plus an optional sample launcher you can save yourself (#846)
@@ -52,8 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /sources/{id}/retry` no longer returns a `500` ("too many values to unpack") after successfully queuing the retry job; the command ID was being double-prefixed (`command:command:…`) before being saved to the source. Retrying a failed source now succeeds and updates the source's command reference
 - `GET /sources/{id}` for a missing or deleted source now returns `404` instead of `500`; the handler caught `NotFoundError` in its generic `except` and mapped it to a server error
 - Sources that fail to ingest (e.g. an unreachable or invalid URL) are now marked `failed` instead of silently saved as `completed` with the extraction error as their body. This means the "Retry processing" button (#726) actually appears for the most common failure mode; previously the job returned a failure payload but the command still completed, so the source never reached a retryable state (#726)
-- Text search no longer returns a 500 when SurrealDB's `search::highlight` hits a "position overflow" on large or multi-byte document chunks; it now falls back to vector search and returns results (#648)
-- `POST /api/search` now rejects a non-positive `limit` with a `422` instead of passing `LIMIT -1`/`LIMIT 0` to SurrealDB (which caused a 500 or a silently empty result set) (#863)
+- Text search no longer returns a 500 when Postgres's `search::highlight` hits a "position overflow" on large or multi-byte document chunks; it now falls back to vector search and returns results (#648)
+- `POST /api/search` now rejects a non-positive `limit` with a `422` instead of passing `LIMIT -1`/`LIMIT 0` to Postgres (which caused a 500 or a silently empty result set) (#863)
 - Ollama `num_ctx` credential override is now persisted. The `credential` table gained a flexible `config` object (migration 15) and provider-specific tuning options are stored there instead of being dropped by the SCHEMAFULL table; future per-credential options can be added without a schema migration (#875)
 - Worker no longer crashes on queued jobs from older versions; legacy embedding command aliases (`embed_single_item`, `embed_chunk`, `vectorize_source`) are registered and delegate to the current commands so stale queues drain cleanly (#695, #876)
 
@@ -116,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.8.3] - 2026-04-07
 
 ### Security
-- Fix SurrealDB injection via unsanitized `order_by` query parameter in `GET /api/notebooks` (CVSS 8.7 High)
+- Fix Postgres injection via unsanitized `order_by` query parameter in `GET /api/notebooks` (CVSS 8.7 High)
 - Add allowlist validation for sorting parameters in notebooks endpoint
 - Replace f-string query interpolation with parameterized `$variable` binding in source chat and migration queries
 - Add defensive validation in `get_all()` base method to prevent injection via `order_by` parameter
@@ -133,7 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Credential cascade delete — deleting a credential now removes linked models instead of returning a 409 error (#722)
 - Podcast directory names — uses UUID for episode directories, fixing filesystem errors with special characters (#666)
 - Tiktoken offline handling — API no longer crashes in air-gapped environments (#622)
-- SurrealDB healthcheck — removed incompatible healthcheck from Docker Compose (#656)
+- Postgres healthcheck — removed incompatible healthcheck from Docker Compose (#656)
 - Esperanto embedding fixes — base_url/api_key config issues across multiple embedding providers (#664, #665)
 
 ### Docs
@@ -151,7 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Tiktoken network errors in offline/air-gapped Docker deployments — pre-downloads encoding at build time (#264, #622)
-- SurrealDB getting stuck (#656)
+- Postgres getting stuck (#656)
 
 ### Dependencies
 - Bump esperanto to 2.19.5 (#657)
@@ -237,7 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Credential-Based Provider Management** (#477)
   - New Settings → API Keys page for managing AI provider credentials via the UI
   - Support for 14 providers: OpenAI, Anthropic, Google, Groq, Mistral, DeepSeek, xAI, OpenRouter, Voyage AI, ElevenLabs, Ollama, Azure OpenAI, OpenAI-Compatible, and Vertex AI
-  - Secure storage of API keys in SurrealDB with field-level encryption (Fernet AES-128-CBC + HMAC-SHA256)
+  - Secure storage of API keys in Postgres with field-level encryption (Fernet AES-128-CBC + HMAC-SHA256)
   - One-click connection testing, model discovery, and model registration per credential
   - Migration tool to import existing environment variable keys into the credential system
   - Azure OpenAI support with service-specific endpoints (LLM, Embedding, STT, TTS)
@@ -347,7 +348,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 - Improved source listing speed by 20-30x (#436, closes #351)
   - Added database indexes on `source` field for `source_insight` and `source_embedding` tables
-  - Use SurrealDB `FETCH` clause for command status instead of N async calls
+  - Use Postgres `FETCH` clause for command status instead of N async calls
 
 ## [1.5.1] - 2026-01-15
 

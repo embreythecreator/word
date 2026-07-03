@@ -141,12 +141,12 @@ api:
 worker: worker-start
 
 worker-start:
-	@echo "Starting background command worker..."
-	uv run --env-file .env surreal-commands-worker --import-modules commands
+	@echo "Starting background job worker..."
+	PYTHONPATH=$(CURDIR) uv run --env-file .env procrastinate -a open_notebook.jobs.app worker
 
 worker-stop:
-	@echo "Stopping background command worker..."
-	pkill -f "surreal-commands-worker" || true
+	@echo "Stopping background job worker..."
+	pkill -f "procrastinate -a open_notebook.jobs.app worker" || true
 
 worker-restart: worker-stop
 	@sleep 2
@@ -162,7 +162,7 @@ start-all:
 	@uv run run_api.py &
 	@sleep 3
 	@echo "⚙️ Starting background worker..."
-	@uv run --env-file .env surreal-commands-worker --import-modules commands &
+	@PYTHONPATH=$(CURDIR) uv run --env-file .env procrastinate -a open_notebook.jobs.app worker &
 	@sleep 2
 	@echo "✅ All services started!"
 	@echo "🔗 API: http://localhost:5055"
@@ -171,7 +171,7 @@ start-all:
 stop-all:
 	@echo "🛑 Stopping all Open Notebook services..."
 	@pkill -f "next dev" || true
-	@pkill -f "surreal-commands-worker" || true
+	@pkill -f "procrastinate -a open_notebook.jobs.app worker" || true
 	@pkill -f "run_api.py" || true
 	@pkill -f "uvicorn api.main:app" || true
 	@docker compose down
@@ -184,7 +184,7 @@ status:
 	@echo "API Backend:"
 	@pgrep -f "run_api.py\|uvicorn api.main:app" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
 	@echo "Background Worker:"
-	@pgrep -f "surreal-commands-worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
+	@pgrep -f "procrastinate -a open_notebook.jobs.app worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
 
 # === Documentation Export ===
 export-docs:

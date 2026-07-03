@@ -5,6 +5,7 @@ from pydantic import ConfigDict, Field, field_validator
 
 from open_notebook.database.repository import RecordID, ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
+from open_notebook.jobs import get_command_status
 
 
 async def _resolve_model_config(model_id: str) -> Tuple[str, str, dict]:
@@ -222,7 +223,7 @@ class PodcastEpisode(ObjectModel):
         default_factory=dict, description="Generated outline"
     )
     command: Optional[Union[str, RecordID]] = Field(
-        default=None, description="Link to surreal-commands job"
+        default=None, description="Link to background generation job"
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -233,8 +234,6 @@ class PodcastEpisode(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
-
             status = await get_command_status(str(self.command))
             return status.status if status else "unknown"
         except Exception:
@@ -246,8 +245,6 @@ class PodcastEpisode(ObjectModel):
             return {"status": None, "error_message": None}
 
         try:
-            from surreal_commands import get_command_status
-
             status = await get_command_status(str(self.command))
             if not status:
                 return {"status": "unknown", "error_message": None}

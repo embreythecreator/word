@@ -31,9 +31,9 @@ This file provides architectural guidance for contributors working on Open Noteb
 │ - Job queue for async operations (podcasts)             │
 │ - Multi-provider AI provisioning via Esperanto          │
 └────────────────────────┬────────────────────────────────┘
-                         │ SurrealQL
+                         │ SQL
 ┌────────────────────────▼────────────────────────────────┐
-│         Database (SurrealDB)                            │
+│         Database (Postgres)                            │
 │         Graph database @ port 8000                      │
 ├─────────────────────────────────────────────────────────┤
 │ - Records: Notebook, Source, Note, ChatSession, Credential│
@@ -63,15 +63,15 @@ User documentation is at @docs/
 - **Framework**: FastAPI 0.104+
 - **Language**: Python 3.11+
 - **Workflows**: LangGraph state machines
-- **Database**: SurrealDB async driver
+- **Database**: Postgres async driver
 - **AI Providers**: Esperanto library (8+ providers: OpenAI, Anthropic, Google, Groq, Ollama, Mistral, DeepSeek, xAI)
-- **Job Queue**: Surreal-Commands for async jobs (podcasts)
+- **Job Queue**: Procrastinate for async jobs (podcasts)
 - **Logging**: Loguru
 - **Validation**: Pydantic v2
 - **Testing**: Pytest
 
 ### Database
-- **SurrealDB**: Graph database with built-in embedding storage and vector search
+- **Postgres**: Graph database with built-in embedding storage and vector search
 - **Schema Migrations**: Automatic on API startup via AsyncMigrationManager
 
 ### Additional Services
@@ -86,7 +86,7 @@ User documentation is at @docs/
 
 ### 1. Async-First Design
 - All database queries, graph invocations, and API calls are async (await)
-- SurrealDB async driver with connection pooling
+- Postgres async driver with connection pooling
 - FastAPI handles concurrent requests efficiently
 
 ### 2. LangGraph Workflows
@@ -105,7 +105,7 @@ User documentation is at @docs/
 
 ### 4. Database Schema
 - **Automatic migrations**: AsyncMigrationManager runs on API startup
-- **SurrealDB graph model**: Records with relationships and embeddings
+- **Postgres graph model**: Records with relationships and embeddings
 - **Vector search**: Built-in semantic search across all content
 - **Transactions**: Repo functions handle ACID operations
 
@@ -125,7 +125,7 @@ User documentation is at @docs/
 ### API Startup
 - **Migrations run automatically** on startup; check logs for errors
 - **Must start API before UI**: UI depends on API for all data
-- **SurrealDB must be running**: API fails without database connection
+- **Postgres must be running**: API fails without database connection
 
 ### Frontend-Backend Communication
 - **Base API URL**: Configured in `.env.local` (default: http://localhost:5055)
@@ -160,7 +160,7 @@ See dedicated CLAUDE.md files for detailed guidance:
 - **[domain/CLAUDE.md](domain/CLAUDE.md)**: Data models, repository pattern, search functions
 - **[ai/CLAUDE.md](ai/CLAUDE.md)**: ModelManager, AI provider integration, Esperanto usage
 - **[graphs/CLAUDE.md](graphs/CLAUDE.md)**: LangGraph workflow design, state machines
-- **[database/CLAUDE.md](database/CLAUDE.md)**: SurrealDB operations, migrations, async patterns
+- **[database/CLAUDE.md](database/CLAUDE.md)**: Postgres operations, migrations, async patterns
 
 ---
 
@@ -202,7 +202,7 @@ See dedicated CLAUDE.md files for detailed guidance:
 
 ### Add Database Migration
 1. Create `migrations/XXX_description.surql`
-2. Write SurrealQL schema changes
+2. Write SQL schema changes
 3. Create `migrations/XXX_description_down.surql` (optional rollback)
 4. API auto-detects on startup; migration runs if newer than recorded version
 

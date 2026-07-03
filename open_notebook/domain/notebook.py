@@ -5,11 +5,11 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Tuple, Union
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from surreal_commands import submit_command
 
 from open_notebook.database.repository import RecordID, ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
+from open_notebook.jobs import get_command_status, submit_command
 
 
 class Notebook(ObjectModel):
@@ -372,7 +372,7 @@ class Source(ObjectModel):
     topics: Optional[List[str]] = Field(default_factory=list)
     full_text: Optional[str] = None
     command: Optional[Union[str, RecordID]] = Field(
-        default=None, description="Link to surreal-commands processing job"
+        default=None, description="Link to background processing job"
     )
 
     @field_validator("command", mode="before")
@@ -399,8 +399,6 @@ class Source(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
-
             status = await get_command_status(str(self.command))
             return status.status if status else "unknown"
         except Exception as e:
@@ -413,8 +411,6 @@ class Source(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
-
             status_result = await get_command_status(str(self.command))
             if not status_result:
                 return None
@@ -511,7 +507,7 @@ class Source(ObjectModel):
                 raise ValueError(f"Source {self.id} has no text to vectorize")
 
             # Submit the embed_source command
-            command_id = submit_command(
+            command_id = await submit_command(
                 "open_notebook",
                 "embed_source",
                 {"source_id": str(self.id)},
@@ -562,7 +558,7 @@ class Source(ObjectModel):
         try:
             # Submit create_insight command (fire-and-forget)
             # Command handles retries internally for transaction conflicts
-            command_id = submit_command(
+            command_id = await submit_command(
                 "open_notebook",
                 "create_insight",
                 {
@@ -660,7 +656,7 @@ class Note(ObjectModel):
 
         # Submit embedding command (fire-and-forget) if note has content
         if self.id and self.content and self.content.strip():
-            command_id = submit_command(
+            command_id = await submit_command(
                 "open_notebook",
                 "embed_note",
                 {"note_id": str(self.id)},

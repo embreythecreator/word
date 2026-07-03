@@ -1,6 +1,6 @@
 # Domain Module
 
-Core data models for notebooks, sources, notes, and settings with async SurrealDB persistence, auto-embedding, and relationship management.
+Core data models for notebooks, sources, notes, and settings with async Postgres persistence, auto-embedding, and relationship management.
 
 ## Purpose
 
@@ -30,7 +30,7 @@ Two base classes support different persistence patterns: **ObjectModel** (mutabl
 
 - **Source**: Content item (file/URL)
   - `vectorize()`: Submit async embedding job (returns command_id, fire-and-forget)
-  - `get_status()`, `get_processing_progress()`: Track job via surreal_commands
+  - `get_status()`, `get_processing_progress()`: Track job via open_notebook.jobs
   - `get_context()`: Returns summary for LLM context
   - `add_insight()`: Submit async insight creation via `create_insight_command` (fire-and-forget, returns command_id)
 
@@ -43,7 +43,7 @@ Two base classes support different persistence patterns: **ObjectModel** (mutabl
 - **Asset**: File/URL reference helper
 
 - **Search functions**:
-  - `text_search()`: Full-text keyword search. On a SurrealDB `search::highlight` "position overflow" (large/multi-byte chunks) it falls back to `vector_search()`; if that also fails it raises `DatabaseOperationError` (never silently returns an empty list)
+  - `text_search()`: Full-text keyword search. On a Postgres `search::highlight` "position overflow" (large/multi-byte chunks) it falls back to `vector_search()`; if that also fails it raises `DatabaseOperationError` (never silently returns an empty list)
   - `vector_search()`: Semantic search via embeddings (default minimum_score=0.2)
 
 ### content_settings.py
@@ -55,7 +55,7 @@ Two base classes support different persistence patterns: **ObjectModel** (mutabl
 
 ### credential.py
 - **Credential**: Individual credential records for API keys and provider configuration
-  - **One record per credential**: Each credential (e.g., "My OpenAI Key", "Work Anthropic") is a separate `Credential` record in SurrealDB
+  - **One record per credential**: Each credential (e.g., "My OpenAI Key", "Work Anthropic") is a separate `Credential` record in Postgres
   - **Fields**: name, provider, modalities (list), api_key (SecretStr), base_url, endpoint, api_version, endpoint_llm/embedding/stt/tts, project, location, credentials_path
   - **SecretStr protection**: API key field uses Pydantic's `SecretStr` (values masked in logs/repr)
   - **Encryption integration**: Uses `encrypt_value()`/`decrypt_value()` from `open_notebook.utils.encryption`
@@ -81,11 +81,11 @@ Two base classes support different persistence patterns: **ObjectModel** (mutabl
 
 ## Key Dependencies
 
-- `surrealdb`: RecordID type for relationships
+- `postgres`: RecordID type for relationships
 - `pydantic`: Validation and field_validator decorators
 - `open_notebook.database.repository`: CRUD and relationship functions
 - `open_notebook.ai.models`: ModelManager for embeddings
-- `surreal_commands`: Async job submission (vectorization, insights)
+- `open_notebook.jobs`: Async job submission (vectorization, insights)
 - `loguru`: Logging
 
 ## Quirks & Gotchas
@@ -98,7 +98,7 @@ Two base classes support different persistence patterns: **ObjectModel** (mutabl
   - `Note.save()` → auto-submits `embed_note` command
   - `Source.save()` → does NOT auto-submit (must call `vectorize()` explicitly)
   - `Source.add_insight()` → submits `create_insight_command` which handles DB insert + `embed_insight` command (all fire-and-forget)
-- **Relationship strings**: Must match SurrealDB schema (reference, artifact, refers_to)
+- **Relationship strings**: Must match Postgres schema (reference, artifact, refers_to)
 
 ## How to Add New Model
 

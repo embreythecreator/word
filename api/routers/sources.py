@@ -1,4 +1,3 @@
-import asyncio
 import os
 from pathlib import Path
 from typing import Any, List, Optional
@@ -14,7 +13,6 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from loguru import logger
-from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
 from api.models import (
@@ -28,12 +26,13 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
-from commands.source_commands import SourceProcessingInput
+from commands.source_commands import SourceProcessingInput, process_source_command
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError, NotFoundError
+from open_notebook.jobs import submit_command
 
 router = APIRouter()
 
@@ -476,13 +475,10 @@ async def create_source(
                 )
 
         else:
-            # SYNC PATH: Execute synchronously using execute_command_sync
+            # SYNC PATH: Execute the handler inline.
             logger.info("Using sync processing path")
 
             try:
-                # Import command modules to ensure they're registered
-                import commands.source_commands  # noqa: F401
-
                 # Create source record; the repository generates the ID.
                 source = Source(
                     title=source_data.title or "Processing...",
@@ -504,19 +500,11 @@ async def create_source(
                     embed=source_data.embed,
                 )
 
-                # Run in thread pool to avoid blocking the event loop
-                # execute_command_sync uses asyncio.run() internally which can't
-                # be called from an already-running event loop (FastAPI)
-                result = await asyncio.to_thread(
-                    execute_command_sync,
-                    "open_notebook",  # app name
-                    "process_source",  # command name
-                    command_input.model_dump(),
-                    timeout=300,  # 5 minute timeout for sync processing
-                )
+                result = await process_source_command(command_input)
 
-                if not result.is_success():
-                    logger.error(f"Sync processing failed: {result.error_message}")
+                if not result.success:
+                    error_message = result.error_message or "Unknown processing error"
+                    logger.error(f"Sync processing failed: {error_message}")
                     # Clean up source record
                     try:
                         await source.delete()
@@ -530,7 +518,7 @@ async def create_source(
                             pass
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Processing failed: {result.error_message}",
+                        detail=f"Processing failed: {error_message}",
                     )
 
                 # Get the processed source
@@ -1045,7 +1033,7 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
             raise HTTPException(status_code=404, detail="Transformation not found")
 
         # Submit transformation as background job (fire-and-forget)
-        command_id = submit_command(
+        command_id = await submit_command(
             "open_notebook",
             "run_transformation",
             {

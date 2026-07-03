@@ -4,7 +4,7 @@ Domain models for podcast generation featuring speaker and episode profile manag
 
 ## Purpose
 
-Encapsulates podcast metadata and configuration: speaker profiles (voice/personality config), episode profiles (generation settings), and podcast episodes (with job status tracking via surreal-commands).
+Encapsulates podcast metadata and configuration: speaker profiles (voice/personality config), episode profiles (generation settings), and podcast episodes (with job status tracking via Procrastinate).
 
 ## Architecture Overview
 
@@ -13,7 +13,7 @@ Two-tier profile system using the **model registry** for AI model references:
 - **EpisodeProfile**: `outline_llm`/`transcript_llm` (record<model> references) for LLM selection, `language` field (BCP 47 locale code), segment count, briefing template.
 - **PodcastEpisode**: Generated episode record linking profiles, content, and async job.
 
-All inherit from `ObjectModel` (SurrealDB base class with table_name and save/load).
+All inherit from `ObjectModel` (Postgres base class with table_name and save/load).
 
 ## Component Catalog
 
@@ -48,8 +48,8 @@ All inherit from `ObjectModel` (SurrealDB base class with table_name and save/lo
 #### PodcastEpisode
 - Stores episode_profile and speaker_profile as dicts (snapshots of config at generation time).
 - Optional audio_file path, transcript/outline dicts.
-- **Job tracking**: command field links to surreal-commands RecordID.
-- `get_job_status()` fetches async job status via surreal-commands library.
+- **Job tracking**: command field links to Procrastinate RecordID.
+- `get_job_status()` fetches async job status via Procrastinate library.
 - `get_job_detail()` returns both status and error_message from the job (used for retry validation and UI error display).
 - `_prepare_save_data()` ensures command field is always RecordID format for database.
 
@@ -67,20 +67,20 @@ Data migration for podcast profiles: maps legacy provider/model strings to Model
 - **Profile snapshots**: episode_profile and speaker_profile stored as dicts on PodcastEpisode to freeze config at generation time.
 - **Field validation**: Pydantic validators enforce constraints (segment count, speaker count, required fields).
 - **Async database access**: `get_by_name()` queries via repo_query.
-- **Job tracking**: command field delegates to surreal-commands; get_job_status() returns "unknown" on failure.
+- **Job tracking**: command field delegates to Procrastinate; get_job_status() returns "unknown" on failure.
 - **Record ID handling**: `_prepare_save_data()` converts model ID strings to RecordID before save; `ensure_record_id()` handles both string and RecordID inputs.
 - **nullable_fields ClassVar**: Declares fields that may be null/absent in the database, allowing ObjectModel to handle them during deserialization.
 
 ## Key Dependencies
 
 - `pydantic`: Field validators, ObjectModel inheritance
-- `surrealdb`: RecordID type for job and model references
+- `postgres`: RecordID type for job and model references
 - `open_notebook.database.repository`: repo_query, ensure_record_id
 - `open_notebook.domain.base`: ObjectModel base class
 - `open_notebook.ai.models`: Model class (for `_resolve_model_config`)
 - `open_notebook.ai.key_provider`: provision_provider_keys (fallback)
 - `open_notebook.domain.credential`: Credential (for migration)
-- `surreal_commands` (optional): get_command_status() for job status
+- `open_notebook.jobs` (optional): get_command_status() for job status
 
 ## Important Quirks & Gotchas
 
@@ -99,5 +99,5 @@ Data migration for podcast profiles: maps legacy provider/model strings to Model
 1. **Add new speaker field**: Add to required_fields list in validate_speakers()
 2. **Add episode config field**: Validate in EpisodeProfile, update briefing generation code; add to nullable_fields if optional
 3. **Add job metadata**: Extend PodcastEpisode with new fields (e.g., progress tracking)
-4. **Change job provider**: Replace surreal-commands with alternative job queue library; update get_job_status()
+4. **Change job provider**: Replace Procrastinate with alternative job queue library; update get_job_status()
 5. **Add new model reference field**: Add field, add to nullable_fields, add RecordID conversion in `_prepare_save_data()`, add resolve method using `_resolve_model_config()`

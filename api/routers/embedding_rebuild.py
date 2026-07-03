@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException
 from loguru import logger
-from surreal_commands import get_command_status
 
 from api.command_service import CommandService
 from api.models import (
@@ -11,6 +10,7 @@ from api.models import (
     RebuildStatusResponse,
 )
 from open_notebook.database.repository import repo_query
+from open_notebook.jobs import get_command_status
 
 router = APIRouter()
 
@@ -130,7 +130,6 @@ async def get_rebuild_status(command_id: str):
     - **timestamps**: started_at, completed_at
     """
     try:
-        # Get command status from surreal_commands
         status = await get_command_status(command_id)
 
         if not status:

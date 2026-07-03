@@ -3,17 +3,24 @@ import time
 from typing import List, Optional
 
 from loguru import logger
-from pydantic import BaseModel
-from surreal_commands import command
+
+from open_notebook.jobs import (
+    COMMAND_APP,
+    CommandInput,
+    CommandOutput,
+    app,
+    run_task_handler,
+    task_name,
+)
 
 
-class TextProcessingInput(BaseModel):
+class TextProcessingInput(CommandInput):
     text: str
     operation: str = "uppercase"  # uppercase, lowercase, word_count, reverse
     delay_seconds: Optional[int] = None  # For testing async behavior
 
 
-class TextProcessingOutput(BaseModel):
+class TextProcessingOutput(CommandOutput):
     success: bool
     original_text: str
     processed_text: Optional[str] = None
@@ -22,13 +29,13 @@ class TextProcessingOutput(BaseModel):
     error_message: Optional[str] = None
 
 
-class DataAnalysisInput(BaseModel):
+class DataAnalysisInput(CommandInput):
     numbers: List[float]
     analysis_type: str = "basic"  # basic, detailed
     delay_seconds: Optional[int] = None
 
 
-class DataAnalysisOutput(BaseModel):
+class DataAnalysisOutput(CommandOutput):
     success: bool
     analysis_type: str
     count: int
@@ -40,7 +47,6 @@ class DataAnalysisOutput(BaseModel):
     error_message: Optional[str] = None
 
 
-@command("process_text", app="open_notebook")
 async def process_text_command(input_data: TextProcessingInput) -> TextProcessingOutput:
     """
     Example command for text processing. Tests basic command functionality
@@ -91,7 +97,6 @@ async def process_text_command(input_data: TextProcessingInput) -> TextProcessin
         )
 
 
-@command("analyze_data", app="open_notebook")
 async def analyze_data_command(input_data: DataAnalysisInput) -> DataAnalysisOutput:
     """
     Example command for data analysis. Tests command with complex input/output
@@ -140,3 +145,45 @@ async def analyze_data_command(input_data: DataAnalysisInput) -> DataAnalysisOut
             processing_time=processing_time,
             error_message=str(e),
         )
+
+
+@app.task(name=task_name(COMMAND_APP, "process_text"), pass_context=True)
+async def process_text_task(
+    context,
+    *,
+    text: str,
+    operation: str = "uppercase",
+    delay_seconds: Optional[int] = None,
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="process_text",
+        input_model=TextProcessingInput,
+        handler=process_text_command,
+        task_kwargs={
+            "text": text,
+            "operation": operation,
+            "delay_seconds": delay_seconds,
+        },
+    )
+
+
+@app.task(name=task_name(COMMAND_APP, "analyze_data"), pass_context=True)
+async def analyze_data_task(
+    context,
+    *,
+    numbers: List[float],
+    analysis_type: str = "basic",
+    delay_seconds: Optional[int] = None,
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="analyze_data",
+        input_model=DataAnalysisInput,
+        handler=analyze_data_command,
+        task_kwargs={
+            "numbers": numbers,
+            "analysis_type": analysis_type,
+            "delay_seconds": delay_seconds,
+        },
+    )

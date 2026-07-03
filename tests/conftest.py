@@ -13,6 +13,7 @@ from pathlib import Path
 # The PasswordAuthMiddleware skips auth when this env var is not set
 # Set to empty string instead of deleting to prevent it from being reloaded
 os.environ["OPEN_NOTEBOOK_PASSWORD"] = ""
+os.environ["OPEN_NOTEBOOK_WARD_TOKEN"] = ""
 
 # Load environment variables from .env file
 # This must be done BEFORE any imports that depend on environment variables
