@@ -788,8 +788,8 @@ async def sync_provider_models(
     # Batch fetch existing models to avoid N+1 query pattern
     try:
         existing_models = await repo_query(
-            "SELECT string::lowercase(name) as name, string::lowercase(type) as type FROM model "
-            "WHERE string::lowercase(provider) = $provider",
+            "SELECT lower(name) as name, lower(type) as type FROM model "
+            "WHERE lower(provider) = $provider",
             {"provider": provider.lower()},
         )
         # Create a set of (name, type) tuples for O(1) lookup
@@ -868,7 +868,7 @@ async def get_provider_model_count(provider: str) -> Dict[str, int]:
     """
     # Use case-insensitive comparison by lowercasing the provider
     result = await repo_query(
-        "SELECT type, count() as count FROM model WHERE string::lowercase(provider) = string::lowercase($provider) GROUP BY type",
+        "SELECT type, count(*) as count FROM model WHERE lower(provider) = lower($provider) GROUP BY type",
         {"provider": provider},
     )
 

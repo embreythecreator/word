@@ -210,7 +210,7 @@ async def create_model(model_data: ModelCreate):
         from open_notebook.database.repository import repo_query
 
         existing = await repo_query(
-            "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND string::lowercase(name) = $name AND string::lowercase(type) = $type LIMIT 1",
+            "SELECT * FROM model WHERE lower(provider) = $provider AND lower(name) = $name AND lower(type) = $type LIMIT 1",
             {
                 "provider": model_data.provider.lower(),
                 "name": model_data.name.lower(),

@@ -688,8 +688,8 @@ async def register_models(credential_id: str, models_data: list) -> dict:
 
     # Batch fetch existing models for this provider
     existing_models = await repo_query(
-        "SELECT string::lowercase(name) as name, string::lowercase(type) as type FROM model "
-        "WHERE string::lowercase(provider) = $provider",
+        "SELECT lower(name) as name, lower(type) as type FROM model "
+        "WHERE lower(provider) = $provider",
         {"provider": cred.provider.lower()},
     )
     existing_keys = {(m["name"], m["type"]) for m in existing_models}
@@ -781,7 +781,7 @@ async def migrate_from_provider_config() -> dict:
                 from open_notebook.database.repository import repo_query
 
                 provider_models = await repo_query(
-                    "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND credential IS NONE",
+                    "SELECT * FROM model WHERE lower(provider) = $provider AND credential IS NULL",
                     {"provider": provider.lower()},
                 )
                 if provider_models:
@@ -870,7 +870,7 @@ async def migrate_from_env() -> dict:
 
             # Link unassigned models to this credential
             provider_models = await repo_query(
-                "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND credential IS NONE",
+                "SELECT * FROM model WHERE lower(provider) = $provider AND credential IS NULL",
                 {"provider": provider.lower()},
             )
             if provider_models:

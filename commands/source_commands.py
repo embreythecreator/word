@@ -3,12 +3,20 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from pydantic import BaseModel
-from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import ConfigurationError
+from open_notebook.jobs import (
+    COMMAND_APP,
+    CommandInput,
+    CommandOutput,
+    app,
+    retry_strategy,
+    run_task_handler,
+    task_name,
+)
 
 try:
     from open_notebook.graphs.source import source_graph
@@ -46,18 +54,6 @@ class SourceProcessingOutput(CommandOutput):
     error_message: Optional[str] = None
 
 
-@command(
-    "process_source",
-    app="open_notebook",
-    retry={
-        "max_attempts": 15,  # Handle deep queues (workaround for SurrealDB v2 transaction conflicts)
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 120,  # Allow queue to drain
-        "stop_on": [ValueError, ConfigurationError],  # Don't retry validation/config errors
-        "retry_log_level": "debug",  # Avoid log noise during transaction conflicts
-    },
-)
 async def process_source_command(
     input_data: SourceProcessingInput,
 ) -> SourceProcessingOutput:
@@ -139,20 +135,50 @@ async def process_source_command(
         )
 
     except ValueError as e:
-        # Validation errors are permanent failures. Re-raise so surreal-commands
-        # marks the job as `failed` (stop_on=[ValueError] already prevents
-        # pointless retries). Returning a success=False result instead marks the
-        # job `completed` (is_success() checks job status, not the payload),
-        # which hid extraction failures and left the source without a retryable
-        # `failed` status in the UI.
+        # Validation errors are permanent failures. Re-raise so the worker marks
+        # the job as failed instead of completed with a failure payload.
         logger.error(f"Source processing failed (permanent): {e}")
         raise
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - the worker retry strategy handles retries.
         logger.debug(
             f"Transient error processing source {input_data.source_id}: {e}"
         )
         raise
+
+
+@app.task(
+    name=task_name(COMMAND_APP, "process_source"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=15,
+        wait_min=1,
+        wait_max=120,
+        stop_on=(ValueError, ConfigurationError),
+    ),
+)
+async def process_source_task(
+    context,
+    *,
+    source_id: str,
+    content_state: Dict[str, Any],
+    notebook_ids: List[str],
+    transformations: List[str],
+    embed: bool,
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="process_source",
+        input_model=SourceProcessingInput,
+        handler=process_source_command,
+        task_kwargs={
+            "source_id": source_id,
+            "content_state": content_state,
+            "notebook_ids": notebook_ids,
+            "transformations": transformations,
+            "embed": embed,
+        },
+    )
 
 
 # =============================================================================
@@ -177,18 +203,6 @@ class RunTransformationOutput(CommandOutput):
     error_message: Optional[str] = None
 
 
-@command(
-    "run_transformation",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [ValueError, ConfigurationError],  # Don't retry validation/config errors
-        "retry_log_level": "debug",
-    },
-)
 async def run_transformation_command(
     input_data: RunTransformationInput,
 ) -> RunTransformationOutput:
@@ -261,9 +275,34 @@ async def run_transformation_command(
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - the worker retry strategy handles retries.
         logger.debug(
             f"Transient error running transformation {input_data.transformation_id} "
             f"on source {input_data.source_id}: {e}"
         )
         raise
+
+
+@app.task(
+    name=task_name(COMMAND_APP, "run_transformation"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
+)
+async def run_transformation_task(
+    context, *, source_id: str, transformation_id: str
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="run_transformation",
+        input_model=RunTransformationInput,
+        handler=run_transformation_command,
+        task_kwargs={
+            "source_id": source_id,
+            "transformation_id": transformation_id,
+        },
+    )

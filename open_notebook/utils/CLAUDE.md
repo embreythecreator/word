@@ -52,7 +52,7 @@ Note: Changes require restart of the application.
   - `add_note()`: Include note by ID
   - `add_insight()`: Include insight by ID
   - `build()`: Assemble context respecting token budget and priorities
-  - Uses vector_search to fetch source/insight content from SurrealDB
+  - Uses vector_search to fetch source/insight content from Postgres/pgvector
   - Returns list of ContextItem objects sorted by priority
 
 **Key behavior**:

@@ -1,14 +1,18 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from surreal_commands import registry
 
 import commands
 import commands.embedding_commands as embedding_commands
+from open_notebook.jobs import registered_commands
 
 
 def test_legacy_embedding_commands_are_registered():
-    app_commands = registry.list_commands()["open_notebook"]
+    app_commands = {
+        item["name"]
+        for item in registered_commands()
+        if item["app_id"] == "open_notebook"
+    }
 
     assert "embed_chunk" in app_commands
     assert "embed_single_item" in app_commands
@@ -18,12 +22,12 @@ def test_legacy_embedding_commands_are_registered():
 @pytest.mark.asyncio
 async def test_legacy_embed_chunk_processes_stale_queue_payload(monkeypatch):
     mock_generate_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3])
-    mock_repo_query = AsyncMock()
+    mock_repo_create = AsyncMock(return_value={"id": "source_embedding:test"})
 
     monkeypatch.setattr(
         embedding_commands, "generate_embedding", mock_generate_embedding
     )
-    monkeypatch.setattr(embedding_commands, "repo_query", mock_repo_query)
+    monkeypatch.setattr(embedding_commands, "repo_create", mock_repo_create)
     monkeypatch.setattr(
         embedding_commands, "ensure_record_id", lambda value: f"record:{value}"
     )
@@ -44,10 +48,11 @@ async def test_legacy_embed_chunk_processes_stale_queue_payload(monkeypatch):
         content_type=embedding_commands.ContentType.PLAIN,
         command_id="unknown",
     )
-    mock_repo_query.assert_awaited_once()
-    assert mock_repo_query.await_args is not None
-    assert mock_repo_query.await_args.args[1] == {
-        "source_id": "record:source:abc",
+    mock_repo_create.assert_awaited_once()
+    assert mock_repo_create.await_args is not None
+    assert mock_repo_create.await_args.args[0] == "source_embedding"
+    assert mock_repo_create.await_args.args[1] == {
+        "source": "record:source:abc",
         "order": 2,
         "content": "queued legacy chunk",
         "embedding": [0.1, 0.2, 0.3],

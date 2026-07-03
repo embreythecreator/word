@@ -95,6 +95,7 @@ COPY --from=builder /app/tiktoken-cache /app/tiktoken-cache
 # Ensure uv uses the existing venv without attempting network operations
 ENV UV_NO_SYNC=1
 ENV VIRTUAL_ENV=/app/.venv
+ENV PYTHONPATH=/app
 # Point the app at the pre-baked tiktoken encoding (see open_notebook/config.py)
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 

@@ -49,14 +49,16 @@ When reporting, please include where relevant:
 
 ## Scope
 
-Open Notebook is **self-hosted**: you run the API, frontend, and SurrealDB
-yourself, and you control the AI provider credentials. Please keep in mind:
+Open Notebook is **self-hosted**: you run the REST API, worker, and
+Postgres/pgvector database yourself, and you control the AI provider
+credentials. Please keep in mind:
 
-- The built-in password middleware (`OPEN_NOTEBOOK_PASSWORD`) is a basic access
-  control, not a full authentication system. See
+- The built-in bearer middleware accepts Ward tokens (`OPEN_NOTEBOOK_WARD_TOKEN`,
+  `WARD_TOKEN`, or `API_SERVER_KEY`) and the legacy `OPEN_NOTEBOOK_PASSWORD`
+  token. This is access control, not a full authentication system. See
   [docs/5-CONFIGURATION/security.md](docs/5-CONFIGURATION/security.md) for
   hardening guidance (encryption key, reverse proxy, CORS, default credentials).
-- Misconfiguration of your own deployment (e.g. exposing SurrealDB with default
+- Misconfiguration of your own deployment (e.g. exposing Postgres with default
   credentials, or running without `OPEN_NOTEBOOK_ENCRYPTION_KEY`) is a
   deployment concern covered by that hardening guide rather than a vulnerability
   in the project — though we welcome reports where the defaults or docs actively

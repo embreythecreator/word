@@ -1,6 +1,6 @@
 # Commands Module
 
-**Purpose**: Defines async command handlers for long-running operations via `surreal-commands` job queue system.
+**Purpose**: Defines async command handlers for long-running operations via `Procrastinate` job queue system.
 
 ## Key Components
 
@@ -23,7 +23,7 @@
 ## Important Patterns
 
 - **Pydantic I/O**: All commands use `CommandInput`/`CommandOutput` subclasses for type safety and serialization.
-- **Error handling**: Permanent errors (ValueError) return failure output; all other exceptions auto-retry via surreal-commands.
+- **Error handling**: Permanent errors (ValueError) return failure output; all other exceptions auto-retry via Procrastinate.
 - **Retry configuration**: Uses `stop_on: [ValueError]` (blocklist approach) - retries all exceptions EXCEPT ValueError. This is more resilient than allowlist as new exception types auto-retry.
 - **Fire-and-forget embedding**: Domain models submit embed_* commands via `submit_command()` without waiting. Commands process asynchronously.
 - **Content-type aware chunking**: `embed_source_command` uses `chunk_text()` with automatic content type detection (HTML, Markdown, plain text) for optimal text splitting. Default: 1500 char chunks with 225 char overlap.
@@ -35,7 +35,7 @@
 
 ## Dependencies
 
-**External**: `surreal_commands` (command decorator, job queue, submit_command), `loguru`, `pydantic`, `podcast_creator`
+**External**: `open_notebook.jobs` (command decorator, job queue, submit_command), `loguru`, `pydantic`, `podcast_creator`
 **Internal**: `open_notebook.domain.notebook` (Source, Note, SourceInsight), `open_notebook.utils.chunking` (chunk_text, detect_content_type), `open_notebook.utils.embedding` (generate_embedding, generate_embeddings), `open_notebook.database.repository` (repo_query, repo_insert)
 
 ## Quirks & Edge Cases
@@ -43,7 +43,7 @@
 - **source_commands**: `ensure_record_id()` wraps command IDs for DB storage; transaction conflicts trigger exponential backoff retry. ValueError exceptions are permanent (not retried).
 - **embedding_commands**: Content type detection uses file extension as primary source, heuristics as fallback. Chunks >1800 chars trigger secondary splitting. Empty/whitespace-only content returns ValueError (not retried).
 - **rebuild_embeddings_command**: Returns "jobs_submitted" not "processed_items" - embedding is async. Individual commands handle failures with their own retries.
-- **podcast_commands**: Profiles loaded from SurrealDB by name; model configs (credentials) resolved for ALL profiles before podcast-creator validation. Validates outline_llm/transcript_llm/voice_model are set. Episode records created mid-execution.
+- **podcast_commands**: Profiles loaded from Postgres by name; model configs (credentials) resolved for ALL profiles before podcast-creator validation. Validates outline_llm/transcript_llm/voice_model are set. Episode records created mid-execution.
 - **Example commands**: Accept optional `delay_seconds` for testing async behavior; not for production.
 
 ## Code Example

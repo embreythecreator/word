@@ -24,7 +24,7 @@ async def get_notebooks(
 ):
     """Get all notebooks with optional filtering and ordering."""
     try:
-        # Validate order_by against allowlist to prevent SurrealQL injection
+        # Validate order_by against allowlist before interpolating it into SQL.
         allowed_fields = {"name", "created", "updated"}
         allowed_directions = {"asc", "desc"}
 
@@ -51,10 +51,11 @@ async def get_notebooks(
 
         # Build the query with counts
         query = f"""
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM notebook
+            SELECT
+                n.*,
+                (SELECT count(*) FROM reference r WHERE r.out_id = n.id) as source_count,
+                (SELECT count(*) FROM artifact a WHERE a.out_id = n.id) as note_count
+            FROM notebook n
             ORDER BY {validated_order_by}
         """
 
@@ -150,10 +151,12 @@ async def get_notebook(notebook_id: str):
     try:
         # Query with counts for single notebook
         query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
+            SELECT
+                n.*,
+                (SELECT count(*) FROM reference r WHERE r.out_id = n.id) as source_count,
+                (SELECT count(*) FROM artifact a WHERE a.out_id = n.id) as note_count
+            FROM notebook n
+            WHERE n.id = $notebook_id
         """
         result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
 
@@ -198,10 +201,12 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
 
         # Query with counts after update
         query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
+            SELECT
+                n.*,
+                (SELECT count(*) FROM reference r WHERE r.out_id = n.id) as source_count,
+                (SELECT count(*) FROM artifact a WHERE a.out_id = n.id) as note_count
+            FROM notebook n
+            WHERE n.id = $notebook_id
         """
         result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
 
@@ -247,27 +252,21 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
     """Add an existing source to a notebook (create the reference)."""
     try:
         # Verify the notebook and source exist (raises NotFoundError -> 404)
-        await Notebook.get(notebook_id)
-        await Source.get(source_id)
+        notebook = await Notebook.get(notebook_id)
+        source = await Source.get(source_id)
 
         # Check if reference already exists (idempotency)
         existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
+            "SELECT * FROM reference WHERE out_id = $notebook_id AND in_id = $source_id",
             {
-                "notebook_id": ensure_record_id(notebook_id),
-                "source_id": ensure_record_id(source_id),
+                "notebook_id": ensure_record_id(notebook.id or notebook_id),
+                "source_id": ensure_record_id(source.id or source_id),
             },
         )
 
         # If reference doesn't exist, create it
         if not existing_ref:
-            await repo_query(
-                "RELATE $source_id->reference->$notebook_id",
-                {
-                    "notebook_id": ensure_record_id(notebook_id),
-                    "source_id": ensure_record_id(source_id),
-                },
-            )
+            await source.add_to_notebook(notebook.id or notebook_id)
 
         return {"message": "Source linked to notebook successfully"}
     except HTTPException:
@@ -288,14 +287,15 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
     """Remove a source from a notebook (delete the reference)."""
     try:
         # Verify the notebook exists (raises NotFoundError -> 404)
-        await Notebook.get(notebook_id)
+        notebook = await Notebook.get(notebook_id)
+        source = await Source.get(source_id)
 
         # Delete the reference record linking source to notebook
         await repo_query(
-            "DELETE FROM reference WHERE out = $notebook_id AND in = $source_id",
+            "DELETE FROM reference WHERE out_id = $notebook_id AND in_id = $source_id",
             {
-                "notebook_id": ensure_record_id(notebook_id),
-                "source_id": ensure_record_id(source_id),
+                "notebook_id": ensure_record_id(notebook.id or notebook_id),
+                "source_id": ensure_record_id(source.id or source_id),
             },
         )
 
@@ -303,7 +303,7 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
     except HTTPException:
         raise
     except NotFoundError:
-        raise HTTPException(status_code=404, detail="Notebook not found")
+        raise HTTPException(status_code=404, detail="Notebook or source not found")
     except Exception as e:
         logger.error(
             f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"

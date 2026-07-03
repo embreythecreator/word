@@ -3,9 +3,9 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from loguru import logger
 from pydantic import BaseModel
-from surreal_commands import get_command_status, submit_command
 
 from open_notebook.domain.notebook import Notebook
+from open_notebook.jobs import get_command_status, submit_command
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
 
 
@@ -84,20 +84,12 @@ class PodcastService:
                 "briefing_suffix": briefing_suffix,
             }
 
-            # Ensure command modules are imported before submitting
-            # This is needed because submit_command validates against local registry
-            try:
-                import commands.podcast_commands  # noqa: F401
-            except ImportError as import_err:
-                logger.error(f"Failed to import podcast commands: {import_err}")
-                raise ValueError("Podcast commands not available")
+            job_id = await submit_command(
+                "open_notebook", "generate_podcast", command_args
+            )
 
-            # Submit command to surreal-commands
-            job_id = submit_command("open_notebook", "generate_podcast", command_args)
-
-            # Convert RecordID to string if needed
             if not job_id:
-                raise ValueError("Failed to get job_id from submit_command")
+                raise ValueError("Failed to get job id from queue submission")
             job_id_str = str(job_id)
             logger.info(
                 f"Submitted podcast generation job: {job_id_str} for episode '{episode_name}'"

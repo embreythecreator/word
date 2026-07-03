@@ -5,10 +5,17 @@ from typing import Optional
 
 from loguru import logger
 from pydantic import BaseModel
-from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.jobs import (
+    COMMAND_APP,
+    CommandInput,
+    CommandOutput,
+    app,
+    run_task_handler,
+    task_name,
+)
 from open_notebook.podcasts.models import (
     EpisodeProfile,
     PodcastEpisode,
@@ -66,7 +73,6 @@ class PodcastGenerationOutput(CommandOutput):
     error_message: Optional[str] = None
 
 
-@command("generate_podcast", app="open_notebook", retry={"max_attempts": 1})
 async def generate_podcast_command(
     input_data: PodcastGenerationInput,
 ) -> PodcastGenerationOutput:
@@ -81,7 +87,7 @@ async def generate_podcast_command(
         )
         logger.info(f"Using episode profile: {input_data.episode_profile}")
 
-        # 1. Load Episode and Speaker profiles from SurrealDB
+        # 1. Load Episode and Speaker profiles from the database
         episode_profile = await EpisodeProfile.get_by_name(input_data.episode_profile)
         if not episode_profile:
             raise ValueError(
@@ -137,7 +143,7 @@ async def generate_podcast_command(
         episode_profiles = await repo_query("SELECT * FROM episode_profile")
         speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
 
-        # Transform the surrealdb array into a dictionary for podcast-creator
+        # Transform profile rows into dictionaries for podcast-creator
         episode_profiles_dict = {
             profile["name"]: profile for profile in episode_profiles
         }
@@ -298,3 +304,32 @@ async def generate_podcast_command(
             )
 
         raise RuntimeError(error_msg) from e
+
+
+@app.task(
+    name=task_name(COMMAND_APP, "generate_podcast"),
+    pass_context=True,
+    retry=False,
+)
+async def generate_podcast_task(
+    context,
+    *,
+    episode_profile: str,
+    speaker_profile: str,
+    episode_name: str,
+    content: str,
+    briefing_suffix: Optional[str] = None,
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="generate_podcast",
+        input_model=PodcastGenerationInput,
+        handler=generate_podcast_command,
+        task_kwargs={
+            "episode_profile": episode_profile,
+            "speaker_profile": speaker_profile,
+            "episode_name": episode_name,
+            "content": content,
+            "briefing_suffix": briefing_suffix,
+        },
+    )

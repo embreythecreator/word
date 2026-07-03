@@ -140,7 +140,7 @@ class TestAsyncSourceAssetPersistence:
 
 class TestRetrySourceProcessing:
     """POST /sources/{id}/retry must find a source's notebooks via the reference
-    edge's in/out columns, not a non-existent `source` column (#861)."""
+    join table's in_id/out_id columns, not a non-existent `source` column (#861)."""
 
     @pytest.mark.asyncio
     @patch("api.routers.sources.CommandService.submit_command_job", new_callable=AsyncMock)
@@ -161,7 +161,7 @@ class TestRetrySourceProcessing:
         mock_get.return_value = source
 
         # The corrected query returns the linked notebook(s)
-        mock_repo_query.return_value = ["notebook:1"]
+        mock_repo_query.return_value = [{"out_id": "notebook:1"}]
         # submit_command_job returns str(RecordID), which already includes the
         # "command:" table prefix.
         mock_submit.return_value = "command:123"
@@ -169,10 +169,10 @@ class TestRetrySourceProcessing:
         response = client.post("/api/sources/source:1/retry")
 
         assert response.status_code == 200
-        # Regression guard: must query the reference edge by its `in` column
+        # Regression guard: must query the reference join table by its source column
         called_query = mock_repo_query.await_args.args[0]
-        assert "WHERE in = $source_id" in called_query
-        assert "SELECT VALUE out FROM reference" in called_query
+        assert "WHERE in_id = $source_id" in called_query
+        assert "SELECT out_id FROM reference" in called_query
         # Regression guard: command_id must not be double-prefixed
         # (`command:command:…`), which previously raised a 500 on save.
         assert "command:command" not in str(source.command)

@@ -1,4 +1,3 @@
-import asyncio
 import os
 from pathlib import Path
 from typing import Any, List, Optional
@@ -14,7 +13,6 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from loguru import logger
-from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
 from api.models import (
@@ -28,12 +26,13 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
-from commands.source_commands import SourceProcessingInput
+from commands.source_commands import SourceProcessingInput, process_source_command
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError, NotFoundError
+from open_notebook.jobs import submit_command
 
 router = APIRouter()
 
@@ -183,7 +182,7 @@ async def get_sources(
             )
 
         # Build ORDER BY clause
-        order_clause = f"ORDER BY {sort_by} {sort_order.upper()}"
+        order_clause = f"ORDER BY s.{sort_by} {sort_order.upper()}"
 
         # Build the query
         if notebook_id:
@@ -192,15 +191,21 @@ async def get_sources(
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
 
-            # Query sources for specific notebook - include command field with FETCH
+            # Query sources for specific notebook and left-join command metadata.
             query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
-                (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
-                FROM (select value in from reference where out=$notebook_id)
+                SELECT
+                    s.id, s.asset, s.created, s.title, s.updated, s.topics, s.command,
+                    (SELECT count(*) FROM source_insight si WHERE si.source = s.id) AS insights_count,
+                    EXISTS(SELECT 1 FROM source_embedding se WHERE se.source = s.id) AS embedded,
+                    c.status AS command_status,
+                    c.result AS command_result,
+                    c.error_message AS command_error_message
+                FROM source s
+                JOIN reference r ON r.in_id = s.id
+                LEFT JOIN command c ON c.id = s.command
+                WHERE r.out_id = $notebook_id
                 {order_clause}
-                LIMIT $limit START $offset
-                FETCH command
+                LIMIT $limit OFFSET $offset
             """
             result = await repo_query(
                 query,
@@ -211,20 +216,25 @@ async def get_sources(
                 },
             )
         else:
-            # Query all sources - include command field with FETCH
+            # Query all sources and left-join command metadata.
             query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
-                (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
-                FROM source
+                SELECT
+                    s.id, s.asset, s.created, s.title, s.updated, s.topics, s.command,
+                    (SELECT count(*) FROM source_insight si WHERE si.source = s.id) AS insights_count,
+                    EXISTS(SELECT 1 FROM source_embedding se WHERE se.source = s.id) AS embedded,
+                    c.status AS command_status,
+                    c.result AS command_result,
+                    c.error_message AS command_error_message
+                FROM source s
+                LEFT JOIN command c ON c.id = s.command
                 {order_clause}
-                LIMIT $limit START $offset
-                FETCH command
+                LIMIT $limit OFFSET $offset
             """
             result = await repo_query(query, {"limit": limit, "offset": offset})
 
         # Convert result to response model
-        # Command data is already fetched via FETCH command clause
+        # Command data is joined when present; sources can also keep a dangling
+        # command id when the legacy worker has no matching command row.
         response_list = []
         for row in result:
             command = row.get("command")
@@ -232,8 +242,22 @@ async def get_sources(
             status = None
             processing_info = None
 
-            # Extract status from fetched command object (already resolved by FETCH)
-            if command and isinstance(command, dict):
+            # Extract status from joined command metadata when available.
+            if row.get("command_status"):
+                command_id = str(command) if command else None
+                status = row.get("command_status")
+                result_data = row.get("command_result")
+                execution_metadata = (
+                    result_data.get("execution_metadata", {})
+                    if isinstance(result_data, dict)
+                    else {}
+                )
+                processing_info = {
+                    "started_at": execution_metadata.get("started_at"),
+                    "completed_at": execution_metadata.get("completed_at"),
+                    "error": row.get("command_error_message"),
+                }
+            elif command and isinstance(command, dict):
                 command_id = str(command.get("id")) if command.get("id") else None
                 status = command.get("status")
                 # Extract execution metadata from nested result structure
@@ -249,7 +273,7 @@ async def get_sources(
                     "error": command.get("error_message"),
                 }
             elif command:
-                # Command exists but FETCH failed to resolve it (broken reference)
+                # Command exists but no command row is available.
                 command_id = str(command)
                 status = "unknown"
 
@@ -370,7 +394,7 @@ async def create_source(
             # ASYNC PATH: Create source record first, then queue command
             logger.info("Using async processing path")
 
-            # Create source record with asset - let SurrealDB generate the ID
+            # Create source record with asset; the repository generates the ID.
             # Persist asset before save so it's available for retry if processing fails
             if source_data.type == "link":
                 source_asset = Asset(url=source_data.url)
@@ -451,14 +475,11 @@ async def create_source(
                 )
 
         else:
-            # SYNC PATH: Execute synchronously using execute_command_sync
+            # SYNC PATH: Execute the handler inline.
             logger.info("Using sync processing path")
 
             try:
-                # Import command modules to ensure they're registered
-                import commands.source_commands  # noqa: F401
-
-                # Create source record - let SurrealDB generate the ID
+                # Create source record; the repository generates the ID.
                 source = Source(
                     title=source_data.title or "Processing...",
                     topics=[],
@@ -479,19 +500,11 @@ async def create_source(
                     embed=source_data.embed,
                 )
 
-                # Run in thread pool to avoid blocking the event loop
-                # execute_command_sync uses asyncio.run() internally which can't
-                # be called from an already-running event loop (FastAPI)
-                result = await asyncio.to_thread(
-                    execute_command_sync,
-                    "open_notebook",  # app name
-                    "process_source",  # command name
-                    command_input.model_dump(),
-                    timeout=300,  # 5 minute timeout for sync processing
-                )
+                result = await process_source_command(command_input)
 
-                if not result.is_success():
-                    logger.error(f"Sync processing failed: {result.error_message}")
+                if not result.success:
+                    error_message = result.error_message or "Unknown processing error"
+                    logger.error(f"Sync processing failed: {error_message}")
                     # Clean up source record
                     try:
                         await source.delete()
@@ -505,7 +518,7 @@ async def create_source(
                             pass
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Processing failed: {result.error_message}",
+                        detail=f"Processing failed: {error_message}",
                     )
 
                 # Get the processed source
@@ -647,11 +660,11 @@ async def get_source(source_id: str):
 
         # Get associated notebooks
         notebooks_query = await repo_query(
-            "SELECT VALUE out FROM reference WHERE in = $source_id",
+            "SELECT out_id FROM reference WHERE in_id = $source_id",
             {"source_id": ensure_record_id(source.id or source_id)},
         )
         notebook_ids = (
-            [str(nb_id) for nb_id in notebooks_query] if notebooks_query else []
+            [str(row["out_id"]) for row in notebooks_query] if notebooks_query else []
         )
 
         return SourceResponse(
@@ -844,15 +857,12 @@ async def retry_source_processing(source_id: str):
                 )
                 # Continue with retry if we can't check status
 
-        # Get notebooks that this source belongs to. `reference` is a graph edge
-        # (RELATE source->reference->notebook), so it only has `in`/`out` columns —
-        # there is no `source`/`notebook` column. Mirror the working query at the
-        # source-list path above. See issue #861.
+        # Get notebooks that this source belongs to through the reference join table.
         references = await repo_query(
-            "SELECT VALUE out FROM reference WHERE in = $source_id",
+            "SELECT out_id FROM reference WHERE in_id = $source_id",
             {"source_id": ensure_record_id(source.id or source_id)},
         )
-        notebook_ids = [str(nb_id) for nb_id in references] if references else []
+        notebook_ids = [str(row["out_id"]) for row in references] if references else []
 
         if not notebook_ids:
             raise HTTPException(
@@ -1023,7 +1033,7 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
             raise HTTPException(status_code=404, detail="Transformation not found")
 
         # Submit transformation as background job (fire-and-forget)
-        command_id = submit_command(
+        command_id = await submit_command(
             "open_notebook",
             "run_transformation",
             {

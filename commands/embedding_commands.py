@@ -3,12 +3,27 @@ from typing import Dict, List, Literal, Optional
 
 from loguru import logger
 from pydantic import BaseModel
-from surreal_commands import CommandInput, CommandOutput, command, submit_command
 
 from open_notebook.ai.models import model_manager
-from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_create,
+    repo_insert,
+    repo_query,
+    repo_update,
+)
 from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError
+from open_notebook.jobs import (
+    COMMAND_APP,
+    CommandInput,
+    CommandOutput,
+    app,
+    retry_strategy,
+    run_task_handler,
+    submit_command,
+    task_name,
+)
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
 
@@ -170,21 +185,6 @@ class LegacyVectorizeSourceOutput(CommandOutput):
     error_message: Optional[str] = None
 
 
-@command(
-    "embed_note",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [
-            ValueError,
-            ConfigurationError,
-        ],  # Don't retry validation/config errors
-        "retry_log_level": "debug",
-    },
-)
 async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
     """
     Generate and store embedding for a single note.
@@ -223,13 +223,7 @@ async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
         )
 
         # 3. UPSERT embedding into note record
-        await repo_query(
-            "UPDATE $note_id SET embedding = $embedding",
-            {
-                "note_id": ensure_record_id(input_data.note_id),
-                "embedding": embedding,
-            },
-        )
+        await repo_update("note", input_data.note_id, {"embedding": embedding})
 
         processing_time = time.time() - start_time
         logger.info(
@@ -256,7 +250,7 @@ async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - the worker retry strategy handles retries.
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error embedding note {input_data.note_id} "
@@ -265,21 +259,26 @@ async def embed_note_command(input_data: EmbedNoteInput) -> EmbedNoteOutput:
         raise
 
 
-@command(
-    "embed_insight",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [
-            ValueError,
-            ConfigurationError,
-        ],  # Don't retry validation/config errors
-        "retry_log_level": "debug",
-    },
+@app.task(
+    name=task_name(COMMAND_APP, "embed_note"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
 )
+async def embed_note_task(context, *, note_id: str) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="embed_note",
+        input_model=EmbedNoteInput,
+        handler=embed_note_command,
+        task_kwargs={"note_id": note_id},
+    )
+
+
 async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOutput:
     """
     Generate and store embedding for a single source insight.
@@ -320,12 +319,8 @@ async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOu
         )
 
         # 3. UPSERT embedding into insight record
-        await repo_query(
-            "UPDATE $insight_id SET embedding = $embedding",
-            {
-                "insight_id": ensure_record_id(input_data.insight_id),
-                "embedding": embedding,
-            },
+        await repo_update(
+            "source_insight", input_data.insight_id, {"embedding": embedding}
         )
 
         processing_time = time.time() - start_time
@@ -353,7 +348,7 @@ async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOu
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - the worker retry strategy handles retries.
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error embedding insight {input_data.insight_id} "
@@ -362,21 +357,26 @@ async def embed_insight_command(input_data: EmbedInsightInput) -> EmbedInsightOu
         raise
 
 
-@command(
-    "embed_source",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [
-            ValueError,
-            ConfigurationError,
-        ],  # Don't retry validation/config errors
-        "retry_log_level": "debug",
-    },
+@app.task(
+    name=task_name(COMMAND_APP, "embed_insight"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
 )
+async def embed_insight_task(context, *, insight_id: str) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="embed_insight",
+        input_model=EmbedInsightInput,
+        handler=embed_insight_command,
+        task_kwargs={"insight_id": insight_id},
+    )
+
+
 async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutput:
     """
     Generate and store embeddings for a source document.
@@ -413,7 +413,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         # 2. DELETE existing embeddings (idempotency)
         logger.debug(f"Deleting existing embeddings for source {input_data.source_id}")
         await repo_query(
-            "DELETE source_embedding WHERE source = $source_id",
+            "DELETE FROM source_embedding WHERE source = $source_id",
             {"source_id": ensure_record_id(input_data.source_id)},
         )
 
@@ -492,7 +492,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - the worker retry strategy handles retries.
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error embedding source {input_data.source_id} "
@@ -501,18 +501,26 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
         raise
 
 
-@command(
-    "embed_single_item",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [ValueError, ConfigurationError],
-        "retry_log_level": "debug",
-    },
+@app.task(
+    name=task_name(COMMAND_APP, "embed_source"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
 )
+async def embed_source_task(context, *, source_id: str) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="embed_source",
+        input_model=EmbedSourceInput,
+        handler=embed_source_command,
+        task_kwargs={"source_id": source_id},
+    )
+
+
 async def legacy_embed_single_item_command(
     input_data: LegacyEmbedSingleItemInput,
 ) -> LegacyEmbedSingleItemOutput:
@@ -587,18 +595,28 @@ async def legacy_embed_single_item_command(
         raise
 
 
-@command(
-    "embed_chunk",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [ValueError, ConfigurationError],
-        "retry_log_level": "debug",
-    },
+@app.task(
+    name=task_name(COMMAND_APP, "embed_single_item"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
 )
+async def legacy_embed_single_item_task(
+    context, *, item_id: str, item_type: Literal["source", "note", "insight"]
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="embed_single_item",
+        input_model=LegacyEmbedSingleItemInput,
+        handler=legacy_embed_single_item_command,
+        task_kwargs={"item_id": item_id, "item_type": item_type},
+    )
+
+
 async def legacy_embed_chunk_command(
     input_data: LegacyEmbedChunkInput,
 ) -> LegacyEmbedChunkOutput:
@@ -621,17 +639,10 @@ async def legacy_embed_chunk_command(
             command_id=cmd_id,
         )
 
-        await repo_query(
-            """
-            CREATE source_embedding CONTENT {
-                "source": $source_id,
-                "order": $order,
-                "content": $content,
-                "embedding": $embedding,
-            };
-            """,
+        await repo_create(
+            "source_embedding",
             {
-                "source_id": ensure_record_id(input_data.source_id),
+                "source": ensure_record_id(input_data.source_id),
                 "order": input_data.chunk_index,
                 "content": input_data.chunk_text,
                 "embedding": embedding,
@@ -663,7 +674,32 @@ async def legacy_embed_chunk_command(
         raise
 
 
-@command("vectorize_source", app="open_notebook", retry=None)
+@app.task(
+    name=task_name(COMMAND_APP, "embed_chunk"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
+)
+async def legacy_embed_chunk_task(
+    context, *, source_id: str, chunk_index: int, chunk_text: str
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="embed_chunk",
+        input_model=LegacyEmbedChunkInput,
+        handler=legacy_embed_chunk_command,
+        task_kwargs={
+            "source_id": source_id,
+            "chunk_index": chunk_index,
+            "chunk_text": chunk_text,
+        },
+    )
+
+
 async def legacy_vectorize_source_command(
     input_data: LegacyVectorizeSourceInput,
 ) -> LegacyVectorizeSourceOutput:
@@ -713,21 +749,21 @@ async def legacy_vectorize_source_command(
         raise
 
 
-@command(
-    "create_insight",
-    app="open_notebook",
-    retry={
-        "max_attempts": 5,
-        "wait_strategy": "exponential_jitter",
-        "wait_min": 1,
-        "wait_max": 60,
-        "stop_on": [
-            ValueError,
-            ConfigurationError,
-        ],  # Don't retry validation/config errors
-        "retry_log_level": "debug",
-    },
+@app.task(
+    name=task_name(COMMAND_APP, "vectorize_source"),
+    pass_context=True,
+    retry=False,
 )
+async def legacy_vectorize_source_task(context, *, source_id: str) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="vectorize_source",
+        input_model=LegacyVectorizeSourceInput,
+        handler=legacy_vectorize_source_command,
+        task_kwargs={"source_id": source_id},
+    )
+
+
 async def create_insight_command(
     input_data: CreateInsightInput,
 ) -> CreateInsightOutput:
@@ -735,8 +771,8 @@ async def create_insight_command(
     Create a source insight with automatic retry on transaction conflicts.
 
     This command wraps the CREATE source_insight operation with retry logic
-    to handle SurrealDB transaction conflicts that occur during batch imports
-    when multiple parallel transformations try to create insights concurrently.
+    to handle transient write conflicts during batch imports when multiple
+    parallel transformations try to create insights concurrently.
 
     Flow:
     1. CREATE source_insight record in database
@@ -757,30 +793,24 @@ async def create_insight_command(
         )
 
         # 1. Create insight record in database
-        result = await repo_query(
-            """
-            CREATE source_insight CONTENT {
-                "source": $source_id,
-                "insight_type": $insight_type,
-                "content": $content
-            };
-            """,
+        result = await repo_create(
+            "source_insight",
             {
-                "source_id": ensure_record_id(input_data.source_id),
+                "source": ensure_record_id(input_data.source_id),
                 "insight_type": input_data.insight_type,
                 "content": input_data.content,
             },
         )
 
-        if not result or len(result) == 0:
+        if not result:
             raise ValueError("Failed to create insight - no result returned")
 
-        insight_id = str(result[0].get("id", ""))
+        insight_id = str(result.get("id", ""))
         if not insight_id:
             raise ValueError("Failed to create insight - no ID in result")
 
         # 2. Submit embedding command (fire-and-forget)
-        submit_command(
+        await submit_command(
             "open_notebook",
             "embed_insight",
             {"insight_id": insight_id},
@@ -813,13 +843,39 @@ async def create_insight_command(
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - the worker retry strategy handles retries.
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error creating insight for source {input_data.source_id} "
             f"(command: {cmd_id}): {e}"
         )
         raise
+
+
+@app.task(
+    name=task_name(COMMAND_APP, "create_insight"),
+    pass_context=True,
+    retry=retry_strategy(
+        max_attempts=5,
+        wait_min=1,
+        wait_max=60,
+        stop_on=(ValueError, ConfigurationError),
+    ),
+)
+async def create_insight_task(
+    context, *, source_id: str, insight_type: str, content: str
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="create_insight",
+        input_model=CreateInsightInput,
+        handler=create_insight_command,
+        task_kwargs={
+            "source_id": source_id,
+            "insight_type": insight_type,
+            "content": content,
+        },
+    )
 
 
 async def collect_items_for_rebuild(
@@ -841,22 +897,16 @@ async def collect_items_for_rebuild(
             # Query sources with embeddings (via source_embedding table)
             result = await repo_query(
                 """
-                RETURN array::distinct(
-                    SELECT VALUE source.id
-                    FROM source_embedding
-                    WHERE embedding != none AND array::len(embedding) > 0
-                )
+                SELECT DISTINCT source AS id
+                FROM source_embedding
+                WHERE embedding IS NOT NULL
                 """
             )
-            # RETURN returns the array directly as the result (not nested)
-            if result:
-                items["sources"] = [str(item) for item in result]
-            else:
-                items["sources"] = []
+            items["sources"] = [str(item["id"]) for item in result] if result else []
         else:  # mode == "all"
             # Query all sources with non-empty content
             result = await repo_query(
-                "SELECT id FROM source WHERE full_text != none AND string::trim(full_text) != ''"
+                "SELECT id FROM source WHERE full_text IS NOT NULL AND btrim(full_text) != ''"
             )
             items["sources"] = [str(item["id"]) for item in result] if result else []
 
@@ -866,12 +916,12 @@ async def collect_items_for_rebuild(
         if mode == "existing":
             # Query notes with embeddings
             result = await repo_query(
-                "SELECT id FROM note WHERE embedding != none AND array::len(embedding) > 0"
+                "SELECT id FROM note WHERE embedding IS NOT NULL"
             )
         else:  # mode == "all"
             # Query all notes with non-empty content
             result = await repo_query(
-                "SELECT id FROM note WHERE content != none AND string::trim(content) != ''"
+                "SELECT id FROM note WHERE content IS NOT NULL AND btrim(content) != ''"
             )
 
         items["notes"] = [str(item["id"]) for item in result] if result else []
@@ -881,12 +931,12 @@ async def collect_items_for_rebuild(
         if mode == "existing":
             # Query insights with embeddings
             result = await repo_query(
-                "SELECT id FROM source_insight WHERE embedding != none AND array::len(embedding) > 0"
+                "SELECT id FROM source_insight WHERE embedding IS NOT NULL"
             )
         else:  # mode == "all"
             # Query all insights with non-empty content
             result = await repo_query(
-                "SELECT id FROM source_insight WHERE content != none AND string::trim(content) != ''"
+                "SELECT id FROM source_insight WHERE content IS NOT NULL AND btrim(content) != ''"
             )
 
         items["insights"] = [str(item["id"]) for item in result] if result else []
@@ -895,7 +945,6 @@ async def collect_items_for_rebuild(
     return items
 
 
-@command("rebuild_embeddings", app="open_notebook", retry=None)
 async def rebuild_embeddings_command(
     input_data: RebuildEmbeddingsInput,
 ) -> RebuildEmbeddingsOutput:
@@ -967,7 +1016,7 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['sources'])} source embedding jobs...")
         for idx, source_id in enumerate(items["sources"], 1):
             try:
-                submit_command(
+                await submit_command(
                     "open_notebook",
                     "embed_source",
                     {"source_id": source_id},
@@ -987,7 +1036,7 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['notes'])} note embedding jobs...")
         for idx, note_id in enumerate(items["notes"], 1):
             try:
-                submit_command(
+                await submit_command(
                     "open_notebook",
                     "embed_note",
                     {"note_id": note_id},
@@ -1007,7 +1056,7 @@ async def rebuild_embeddings_command(
         logger.info(f"\nSubmitting {len(items['insights'])} insight embedding jobs...")
         for idx, insight_id in enumerate(items["insights"], 1):
             try:
-                submit_command(
+                await submit_command(
                     "open_notebook",
                     "embed_insight",
                     {"insight_id": insight_id},
@@ -1061,3 +1110,30 @@ async def rebuild_embeddings_command(
             processing_time=processing_time,
             error_message=str(e),
         )
+
+
+@app.task(
+    name=task_name(COMMAND_APP, "rebuild_embeddings"),
+    pass_context=True,
+    retry=False,
+)
+async def rebuild_embeddings_task(
+    context,
+    *,
+    mode: Literal["existing", "all"],
+    include_sources: bool = True,
+    include_notes: bool = True,
+    include_insights: bool = True,
+) -> dict:
+    return await run_task_handler(
+        context=context,
+        command_name="rebuild_embeddings",
+        input_model=RebuildEmbeddingsInput,
+        handler=rebuild_embeddings_command,
+        task_kwargs={
+            "mode": mode,
+            "include_sources": include_sources,
+            "include_notes": include_notes,
+            "include_insights": include_insights,
+        },
+    )

@@ -92,13 +92,13 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 
 ### Built With
 
-[![Python][Python]][Python-url] [![Next.js][Next.js]][Next-url] [![React][React]][React-url] [![SurrealDB][SurrealDB]][SurrealDB-url] [![LangChain][LangChain]][LangChain-url]
+[![Python][Python]][Python-url] [![FastAPI][FastAPI]][FastAPI-url] [![Postgres][Postgres]][Postgres-url] [![pgvector][pgvector]][pgvector-url] [![LangChain][LangChain]][LangChain-url]
 
 ## 🚀 Quick Start (2 Minutes)
 
 ### Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
-- That's it! (API keys configured later in the UI)
+- That's it! Provider credentials can be configured later through the REST API.
 
 ### Step 1: Get docker-compose.yml
 
@@ -112,32 +112,31 @@ Copy this into a new file called `docker-compose.yml`:
 
 ```yaml
 services:
-  surrealdb:
-    image: surrealdb/surrealdb:v2
-    command: start --log info --user root --pass root rocksdb:/mydata/mydatabase.db
-    user: root
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=open_notebook
+      - POSTGRES_PASSWORD=open_notebook
+      - POSTGRES_DB=open_notebook
     ports:
-      - "8000:8000"
+      - "5432:5432"
     volumes:
-      - ./surreal_data:/mydata
+      - ./postgres_data:/var/lib/postgresql/data
     restart: always
 
   open_notebook:
     image: lfnovo/open_notebook:v1-latest
     ports:
-      - "8502:8502"
       - "5055:5055"
     environment:
       - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
-      - SURREAL_URL=ws://surrealdb:8000/rpc
-      - SURREAL_USER=root
-      - SURREAL_PASSWORD=root
-      - SURREAL_NAMESPACE=open_notebook
-      - SURREAL_DATABASE=open_notebook
+      - OPEN_NOTEBOOK_WARD_TOKEN=
+      - DATABASE_URL=postgresql://open_notebook:open_notebook@postgres:5432/open_notebook
+      - OPEN_NOTEBOOK_EMBEDDING_DIMENSION=1536
     volumes:
       - ./notebook_data:/app/data
     depends_on:
-      - surrealdb
+      - postgres
     restart: always
 ```
 
@@ -148,20 +147,25 @@ Edit `docker-compose.yml` and change this line:
 ```
 to any secret value (e.g., `my-super-secret-key-123`)
 
+For Ward-authenticated deployments, also set:
+```yaml
+- OPEN_NOTEBOOK_WARD_TOKEN=your-ward-token
+```
+
 ### Step 3: Start Services
 ```bash
 docker compose up -d
 ```
 
-Wait 15-20 seconds, then open: **http://localhost:8502**
+Wait 15-20 seconds, then check the REST API:
+- Health: **http://localhost:5055/health**
+- OpenAPI docs: **http://localhost:5055/docs**
 
-### Step 4: Configure AI Provider
-1. Go to **Models** and choose your provider (OpenAI, Anthropic, Google, etc.)
-2. Click **+ Add Configuration**
-3. Paste your API key and other info as needed and click **Add Configuration**
-4. Click **Test** to test connection
-5. Click **Sync Models** and check models to include
-6. Under **Default Model Assignments**, click **Auto-Assign Defaults** or manually specify which models to use for what 
+### Step 4: Use the REST API
+Word now ships headless by default. Use the versioned FastAPI surface for notebooks, sources, notes, search, podcast generation, and model/credential management. If `OPEN_NOTEBOOK_WARD_TOKEN` or `OPEN_NOTEBOOK_PASSWORD` is set, send it as:
+```http
+Authorization: Bearer your-token
+```
 
 Done! You're ready to create your first notebook.
 
@@ -282,7 +286,8 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 - **Bookmark Integration**: Connect with your favorite bookmarking apps
 
 ### Recently Completed ✅
-- **Next.js Frontend**: Modern React-based frontend with improved performance
+- **Headless REST Surface**: FastAPI-first product surface for agent/runtime integration
+- **Postgres + pgvector Storage**: Durable relational persistence with native vector search
 - **Comprehensive REST API**: Full programmatic access to all functionality
 - **Multi-Model Support**: 18+ AI providers including OpenAI, Anthropic, Ollama, LM Studio
 - **Advanced Podcast Generator**: Professional multi-speaker podcasts with Episode Profiles
@@ -310,12 +315,12 @@ See the [open issues](https://github.com/lfnovo/open-notebook/issues) for a full
 
 ### Contributing
 We welcome contributions! We're especially looking for help with:
-- **Frontend Development**: Help improve our modern Next.js/React UI
+- **API and ingestion development**: Improve the FastAPI, retrieval, and content pipeline surfaces
 - **Testing & Bug Fixes**: Make Open Notebook more robust
 - **Feature Development**: Build the coolest research tool together
 - **Documentation**: Improve guides and tutorials
 
-**Current Tech Stack**: Python, FastAPI, Next.js, React, SurrealDB
+**Current Tech Stack**: Python, FastAPI, Postgres, pgvector, LangGraph
 **Future Roadmap**: Real-time updates, enhanced async processing
 
 See our [Contributing Guide](CONTRIBUTING.md) for detailed information on how to get started.
@@ -351,13 +356,13 @@ Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/lfnovo
 [product-screenshot]: images/screenshot.png
-[Next.js]: https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white
-[Next-url]: https://nextjs.org/
-[React]: https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black
-[React-url]: https://reactjs.org/
 [Python]: https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white
 [Python-url]: https://www.python.org/
+[FastAPI]: https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white
+[FastAPI-url]: https://fastapi.tiangolo.com/
+[Postgres]: https://img.shields.io/badge/Postgres-4169E1?style=for-the-badge&logo=postgresql&logoColor=white
+[Postgres-url]: https://www.postgresql.org/
+[pgvector]: https://img.shields.io/badge/pgvector-222222?style=for-the-badge&logo=postgresql&logoColor=white
+[pgvector-url]: https://github.com/pgvector/pgvector
 [LangChain]: https://img.shields.io/badge/LangChain-3A3A3A?style=for-the-badge&logo=chainlink&logoColor=white
 [LangChain-url]: https://www.langchain.com/
-[SurrealDB]: https://img.shields.io/badge/SurrealDB-FF5E00?style=for-the-badge&logo=databricks&logoColor=white
-[SurrealDB-url]: https://surrealdb.com/

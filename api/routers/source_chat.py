@@ -145,13 +145,13 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
 
         # Get sessions that refer to this source - first get relations, then sessions
         relations = await repo_query(
-            "SELECT in FROM refers_to WHERE out = $source_id",
+            "SELECT in_id FROM refers_to WHERE out_id = $source_id",
             {"source_id": ensure_record_id(full_source_id)},
         )
 
         sessions = []
         for relation in relations:
-            session_id_raw = relation.get("in")
+            session_id_raw = relation.get("in_id")
             if session_id_raw:
                 session_id = str(session_id_raw)
 
@@ -220,7 +220,7 @@ async def get_source_chat_session(
 
         # Verify session is related to this source
         relation_query = await repo_query(
-            "SELECT * FROM refers_to WHERE in = $session_id AND out = $source_id",
+            "SELECT * FROM refers_to WHERE in_id = $session_id AND out_id = $source_id",
             {
                 "session_id": ensure_record_id(full_session_id),
                 "source_id": ensure_record_id(full_source_id),
@@ -318,7 +318,7 @@ async def update_source_chat_session(
 
         # Verify session is related to this source
         relation_query = await repo_query(
-            "SELECT * FROM refers_to WHERE in = $session_id AND out = $source_id",
+            "SELECT * FROM refers_to WHERE in_id = $session_id AND out_id = $source_id",
             {
                 "session_id": ensure_record_id(full_session_id),
                 "source_id": ensure_record_id(full_source_id),
@@ -388,7 +388,7 @@ async def delete_source_chat_session(
 
         # Verify session is related to this source
         relation_query = await repo_query(
-            "SELECT * FROM refers_to WHERE in = $session_id AND out = $source_id",
+            "SELECT * FROM refers_to WHERE in_id = $session_id AND out_id = $source_id",
             {
                 "session_id": ensure_record_id(full_session_id),
                 "source_id": ensure_record_id(full_source_id),
@@ -508,7 +508,7 @@ async def send_message_to_source_chat(
 
         # Verify session is related to this source
         relation_query = await repo_query(
-            "SELECT * FROM refers_to WHERE in = $session_id AND out = $source_id",
+            "SELECT * FROM refers_to WHERE in_id = $session_id AND out_id = $source_id",
             {
                 "session_id": ensure_record_id(full_session_id),
                 "source_id": ensure_record_id(full_source_id),

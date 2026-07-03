@@ -48,7 +48,7 @@ class ObjectModel(BaseModel):
                     "get_all() must be called from a specific model class"
                 )
             if order_by:
-                # Validate order_by to prevent SurrealQL injection
+                # Validate order_by before interpolating it into SQL.
                 # Supports: "field", "field direction", "field1 direction, field2 direction"
                 import re
 
@@ -104,8 +104,12 @@ class ObjectModel(BaseModel):
         if not id:
             raise InvalidInputError("ID cannot be empty")
         try:
+            record_id = id
+            if cls.table_name and ":" not in record_id:
+                record_id = f"{cls.table_name}:{record_id}"
+
             # Get the table name from the ID (everything before the first colon)
-            table_name = id.split(":")[0] if ":" in id else id
+            table_name = record_id.split(":")[0]
 
             # If we're calling from a specific subclass and IDs match, use that class
             if cls.table_name and cls.table_name == table_name:
@@ -117,11 +121,13 @@ class ObjectModel(BaseModel):
                     raise InvalidInputError(f"No class found for table {table_name}")
                 target_class = cast(Type[T], found_class)
 
-            result = await repo_query("SELECT * FROM $id", {"id": ensure_record_id(id)})
+            result = await repo_query(
+                "SELECT * FROM $id", {"id": ensure_record_id(record_id)}
+            )
             if result:
                 return target_class(**result[0])
             else:
-                raise NotFoundError(f"{table_name} with id {id} not found")
+                raise NotFoundError(f"{table_name} with id {record_id} not found")
         except Exception as e:
             logger.error(f"Error fetching object with id {id}: {str(e)}")
             logger.exception(e)
